@@ -100,6 +100,12 @@ where
         self.total_time += curr_time;
     }
 
+    /// Add to the overall total time of the timer. Used pre-dominately to check
+    /// if the current timing setup is missing any pieces of execution.
+    pub fn add_to_total(&mut self, cycles: u64) {
+        self.total_time += cycles;
+    }
+
     /// Print a basic percentage-based status of the timers state
     pub fn print(&self) {
         println!(
