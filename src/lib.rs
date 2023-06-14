@@ -1,3 +1,6 @@
+#![feature(variant_count)]
+#![feature(generic_const_exprs)]
+
 use std::fmt::Debug;
 use std::mem::variant_count;
 use std::time::{Duration, Instant};
