@@ -97,7 +97,7 @@ where
         // Add the elapsed time to this current timer and the total time
         let curr_time = rdtsc() - self.start_timers[timer_index];
         self.elapsed_timers[timer_index] += curr_time;
-        self.total_time += curr_time;
+        // self.total_time += curr_time;
     }
 
     /// Add to the overall total time of the timer. Used pre-dominately to check
