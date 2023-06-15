@@ -15,7 +15,7 @@ Remainder |            607 cycles  0.00%
 
 ## Example program
 
-```
+```rust
 use timeloop::Timer;
 
 #[derive(Debug)]
