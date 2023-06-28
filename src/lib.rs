@@ -37,8 +37,12 @@ where
 
     /// The elapsed times for the current timers
     elapsed_timers: [u64; variant_count::<T>()],
+
+    /// The global starting time for this set of timers
+    start_time: u64,
 }
 
+#[inline(always)]
 fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
@@ -82,32 +86,45 @@ where
             total_time: 0,
             start_timers: [0; variant_count::<T>()],
             elapsed_timers: [0; variant_count::<T>()],
+            start_time: rdtsc(),
         }
     }
 
     /// Start the given timer
+    #[inline(always)]
     pub fn start(&mut self, timer: T) {
         self.start_timers[timer.into()] = rdtsc();
     }
 
     /// Stop the given timer
+    #[inline(always)]
     pub fn stop(&mut self, timer: T) {
         let timer_index = timer.into();
 
         // Add the elapsed time to this current timer and the total time
         let curr_time = rdtsc() - self.start_timers[timer_index];
         self.elapsed_timers[timer_index] += curr_time;
-        // self.total_time += curr_time;
     }
 
     /// Add to the overall total time of the timer. Used pre-dominately to check
     /// if the current timing setup is missing any pieces of execution.
+    #[inline(always)]
     pub fn add_to_total(&mut self, cycles: u64) {
         self.total_time += cycles;
     }
 
     /// Print a basic percentage-based status of the timers state
-    pub fn print(&self) {
+    pub fn print(&mut self) {
+        // Check if the timer is being checked from the initialization time
+        // If so, reset the self.total_time at the end of the print
+        let mut using_global_timer = false;
+
+        // Set the current elapsed time
+        if self.total_time == 0 {
+            self.total_time = rdtsc() - self.start_time;
+            using_global_timer = true;
+        }
+
         println!(
             "Total time: {:8.2?} ({} cycles)",
             std::time::Duration::from_secs_f64(self.total_time as f64 / self.os_timer_freq),
@@ -136,6 +153,11 @@ where
             other as f64 / self.total_time as f64 * 100.,
             width = self.variant_length
         );
+
+        // Reset the total time if we're relying on the global start time
+        if using_global_timer {
+            self.total_time = 0;
+        }
     }
 
     /// Print the current state of the timers with a per iteration count
