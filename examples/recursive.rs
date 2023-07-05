@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 const STACK_SIZE: usize = 1024;
-const END: usize = 128;
+const END: usize = 32;
 const SLEEP_INTERVAL: Duration = Duration::from_millis(50);
 
 timeloop::impl_enum!(
@@ -10,14 +10,15 @@ timeloop::impl_enum!(
     pub enum BasicTimers {
         Total,
         Top,
-        Inner,
+        First,
+        Second,
     }
 );
 
 timeloop::create_profiler!(BasicTimers, STACK_SIZE);
 
-fn top(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::Top);
+fn first(val: &mut usize) {
+    timeloop::scoped_timer!(BasicTimers::First);
 
     if *val >= END {
         return;
@@ -27,19 +28,19 @@ fn top(val: &mut usize) {
 
     if *val < 2 {
         *val += 1;
-        top(val);
+        first(val);
     }
 
     if *val % 2 == 0 {
         *val += 1;
-        inner(val);
+        second(val);
     }
 
     // timeloop::stop!(BasicTimers::Top);
 }
 
-fn inner(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::Inner);
+fn second(val: &mut usize) {
+    timeloop::scoped_timer!(BasicTimers::Second);
 
     if *val >= END {
         return;
@@ -49,14 +50,22 @@ fn inner(val: &mut usize) {
 
     if *val % 2 == 1 {
         *val += 1;
-        top(val);
+        first(val);
     }
+}
+
+fn top() {
+    timeloop::scoped_timer!(BasicTimers::Top);
+
+    std::thread::sleep(SLEEP_INTERVAL / 2);
+
+    let mut counter = 0;
+    first(&mut counter);
 }
 
 fn main() {
     timeloop::start!(BasicTimers::Total);
-    let mut counter = 0;
-    top(&mut counter);
+    top();
     timeloop::stop!(BasicTimers::Total);
 
     // Print the timer state

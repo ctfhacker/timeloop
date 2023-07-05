@@ -62,6 +62,7 @@ macro_rules! create_profiler {
     ($timer_kind:ident, $stack_size:expr) => {
         use std::sync::{Arc, LazyLock, Mutex};
 
+        // Create the static profiler
         static TIMELOOP_TIMER: LazyLock<Arc<Mutex<timeloop::Timer<$timer_kind, $stack_size>>>> =
             LazyLock::new(|| {
                 Arc::new(Mutex::new(
@@ -153,6 +154,12 @@ where
     /// The elapsed times for the current timers
     elapsed_timers: [u64; variant_count::<T>()],
 
+    /// The total times for the current timers (including sub timers)
+    total_timers: [u64; variant_count::<T>()],
+
+    /// The stop times for the current timers
+    total_stop_timers: [u64; variant_count::<T>()],
+
     /// Stack of subtimers which might call each other
     call_stack: [Option<T>; STACK_SIZE],
 
@@ -206,6 +213,8 @@ where
             total_time: 0,
             start_timers: [0; variant_count::<T>()],
             elapsed_timers: [0; variant_count::<T>()],
+            total_timers: [0; variant_count::<T>()],
+            total_stop_timers: [0; variant_count::<T>()],
             start_time: rdtsc(),
             call_stack: [None; STACK_SIZE],
             call_stack_index: 0,
@@ -236,6 +245,12 @@ where
         // Start this timer
         self.start_timers[timer.into()] = rdtsc();
 
+        // If this is the first time seeing this timer, add this time as the start of this
+        // block
+        if self.total_timers[timer.into()] == 0 {
+            self.total_timers[timer.into()] = self.start_timers[timer.into()];
+        }
+
         // Add this timer to the call stack
         assert!(
             self.call_stack_index < STACK_SIZE,
@@ -264,6 +279,9 @@ where
                 "Mis-match start/stop pairs. Tried to stop {timer:?}, but found timer {parent:?}"
             );
         }
+
+        // Update the stop timer for this timer
+        self.total_stop_timers[timer.into()] = rdtsc();
 
         // Add the elapsed time to this current timer and the total time
         let timer_index = timer.into();
@@ -317,13 +335,27 @@ where
 
             let percent = *val as f64 / self.total_time as f64 * 100.;
 
+            // Include the total time if it was included
+            let total_time = {
+                let total_time = self.total_stop_timers[i] - self.total_timers[i];
+
+                if total_time > 0 {
+                    let total_time_percent = total_time as f64 / self.total_time as f64 * 100.;
+                    format!("({total_time_percent:6.2}% total time with child timers)")
+                } else {
+                    String::new()
+                }
+            };
+
+            // Print the stats for this timer
             println!(
-                "{:<width$} | {val:14.2?} cycles {percent:5.2}%",
+                "{:<width$} | {val:14.2?} cycles {percent:5.2}% {total_time}",
                 format!("{timer:?}"),
                 width = self.variant_length
             );
         }
 
+        // Print the remaining
         println!(
             "{:<width$} | {other:14.2?} cycles {:5.2}%",
             REMAINING_TIME_LABEL,
