@@ -2,6 +2,9 @@
 
 An attempt to make a library out of the benchmark code I repeatedly write.
 
+Created during the [Performance Aware Programming](https://computerenhance.com) series by
+Casey Muratori.
+
 ## Output
 
 ```
@@ -16,59 +19,41 @@ Remainder |            607 cycles  0.00%
 ## Example program
 
 ```rust
+#![feature(lazy_cell)]
 use timeloop::Timer;
 
-#[derive(Debug)]
-pub enum BasicTimers {
-    Phase1,
-    Phase2,
-    Phase3,
-}
-
-impl Into<usize> for BasicTimers {
-    fn into(self) -> usize {
-        self as usize
+timeloop::impl_enum!(
+    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+    pub enum BasicTimers {
+        Phase1,
+        Phase2,
+        Phase3,
     }
-}
+);
 
-impl TryFrom<usize> for BasicTimers {
-    type Error = &'static str;
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(BasicTimers::Phase1),
-            1 => Ok(BasicTimers::Phase2),
-            2 => Ok(BasicTimers::Phase3),
-            _ => Err("Unknown Timer value"),
-        }
-    }
-}
-
-fn rdtsc() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
-}
+// Create the local profiler
+const CALL_STACK_SIZE: usize = 16;
+timeloop::create_profiler!(BasicTimers, CALL_STACK_SIZE);
 
 fn main() {
-    let mut timer = Timer::<BasicTimers>::new();
-    let total_start = rdtsc();
-
-    timer.start(BasicTimers::Phase1);
+    // Start and stop a timer manually
+    timeloop::start!(BasicTimers::Phase1);
     std::thread::sleep_ms(100);
-    timer.stop(BasicTimers::Phase1);
+    timeloop::stop!(BasicTimers::Phase1);
 
-    timer.start(BasicTimers::Phase2);
-    std::thread::sleep_ms(200);
-    timer.stop(BasicTimers::Phase2);
+    // Use the scope to start and stop a timer
+    {
+        timeloop::scoped_timer!(BasicTimers::Phase2);
+        std::thread::sleep_ms(200);
+    }
 
-    timer.start(BasicTimers::Phase3);
-    std::thread::sleep_ms(300);
-    timer.stop(BasicTimers::Phase3);
-
-    let total_time = rdtsc() - total_start;
-
-    // Add to the total time
-    timer.add_to_total(total_time);
+    // Use the scope to start and stop a timer
+    {
+        timeloop::scoped_timer!(BasicTimers::Phase3);
+        std::thread::sleep_ms(300);
+    }
 
     // Print the timer state
-    timer.print();
+    timeloop::print!();
 }
 ```
