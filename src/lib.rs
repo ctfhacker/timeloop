@@ -6,6 +6,9 @@ use std::fmt::Debug;
 use std::mem::variant_count;
 use std::time::{Duration, Instant};
 
+#[cfg(not(any(feature = "enable", feature = "disable")))]
+compile_error!("Turn on the `enable` or `disable` feature");
+
 /// Macro for creating various functions needed for the profiler
 /// over the enum of profile points, such as Into<usize> and TryFrom<usize>
 #[macro_export]
@@ -93,6 +96,7 @@ macro_rules! create_profiler {
 #[macro_export]
 macro_rules! start {
     ($timer:expr) => {
+        #[cfg(feature = "enable")]
         crate::TIMELOOP_TIMER.lock().unwrap().start($timer);
     };
 }
@@ -100,6 +104,7 @@ macro_rules! start {
 #[macro_export]
 macro_rules! stop {
     ($timer:expr) => {
+        #[cfg(feature = "enable")]
         crate::TIMELOOP_TIMER.lock().unwrap().stop($timer);
     };
 }
@@ -107,6 +112,7 @@ macro_rules! stop {
 #[macro_export]
 macro_rules! print {
     () => {
+        #[cfg(feature = "enable")]
         crate::TIMELOOP_TIMER.lock().unwrap().print();
     };
 }
@@ -114,6 +120,7 @@ macro_rules! print {
 #[macro_export]
 macro_rules! scoped_timer {
     ($timer:expr) => {
+        #[cfg(feature = "enable")]
         let _timer = _ScopedTimer::new($timer);
     };
 }

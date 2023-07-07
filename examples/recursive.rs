@@ -35,8 +35,6 @@ fn first(val: &mut usize) {
         *val += 1;
         second(val);
     }
-
-    // timeloop::stop!(BasicTimers::Top);
 }
 
 fn second(val: &mut usize) {
@@ -64,9 +62,13 @@ fn top() {
 }
 
 fn main() {
+    let start = std::time::Instant::now();
+
     timeloop::start!(BasicTimers::Total);
     top();
     timeloop::stop!(BasicTimers::Total);
+
+    println!("Time: {:?}", start.elapsed());
 
     // Print the timer state
     timeloop::print!();
