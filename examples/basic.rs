@@ -16,7 +16,7 @@ fn main() {
     timeloop::start_profiler!();
 
     // Example of the work! macro
-    timeloop::work!(BasicTimers::Phase1, {
+    timeloop::time_work!(BasicTimers::Phase1, {
         std::thread::sleep(Duration::from_millis(100));
     });
 
@@ -27,7 +27,7 @@ fn main() {
     }
 
     // Example of the work! macro returning a value
-    let value = timeloop::work!(BasicTimers::Phase3, {
+    let value = timeloop::time_work!(BasicTimers::Phase3, {
         std::thread::sleep(Duration::from_millis(300));
         10
     });

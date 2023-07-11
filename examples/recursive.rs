@@ -65,7 +65,7 @@ fn main() {
 
     let start = std::time::Instant::now();
 
-    timeloop::work!(BasicTimers::Total, {
+    timeloop::time_work!(BasicTimers::Total, {
         top();
         top();
     });
