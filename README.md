@@ -8,19 +8,19 @@ Casey Muratori.
 ## Output
 
 ```
-Calculated OS frequency: 3911988490
-Total time: 600.44ms (2348925345 cycles)
-Phase1    |      391751972 cycles 16.68%
-Phase2    |      783002154 cycles 33.33%
-Phase3    |     1174170612 cycles 49.99%
-Remainder |            607 cycles  0.00%
+Calculated OS frequency: 3911972350
+Total time: 600.22ms (2348036270 cycles)
+    TIMER | HITS | TIMES
+   Phase1 | 1    |      391468413 cycles 16.67% ( 16.67% total time with child timers)
+   Phase2 | 1    |      782703049 cycles 33.33% ( 33.33% total time with child timers)
+   Phase3 | 1    |     1173862351 cycles 49.99% ( 49.99% total time with child timers)
+Remainder |      |           2457 cycles  0.00%
 ```
 
 ## Example program
 
 ```rust
-#![feature(lazy_cell)]
-use timeloop::Timer;
+use std::time::Duration;
 
 timeloop::impl_enum!(
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -31,29 +31,32 @@ timeloop::impl_enum!(
     }
 );
 
-// Create the local profiler
-const CALL_STACK_SIZE: usize = 16;
-timeloop::create_profiler!(BasicTimers, CALL_STACK_SIZE);
+timeloop::create_profiler!(BasicTimers);
 
 fn main() {
-    // Start and stop a timer manually
-    timeloop::start!(BasicTimers::Phase1);
-    std::thread::sleep_ms(100);
-    timeloop::stop!(BasicTimers::Phase1);
+    // Start the global timer for the profiler
+    timeloop::start_profiler!();
 
-    // Use the scope to start and stop a timer
+    // Example of the work! macro
+    timeloop::work!(BasicTimers::Phase1, {
+        std::thread::sleep(Duration::from_millis(100));
+    });
+
+    // Example of the scoped_timer! macro
     {
         timeloop::scoped_timer!(BasicTimers::Phase2);
-        std::thread::sleep_ms(200);
+        std::thread::sleep(Duration::from_millis(200));
     }
 
-    // Use the scope to start and stop a timer
-    {
-        timeloop::scoped_timer!(BasicTimers::Phase3);
-        std::thread::sleep_ms(300);
-    }
+    // Example of the work! macro returning a value
+    let value = timeloop::work!(BasicTimers::Phase3, {
+        std::thread::sleep(Duration::from_millis(300));
+        10
+    });
 
     // Print the timer state
     timeloop::print!();
+
+    println!("Value: {value}");
 }
 ```
