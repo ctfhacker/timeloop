@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 
 [features]
-default = []
+default = ["enable"]
 enable = []
 disable = []
