@@ -135,7 +135,7 @@ macro_rules! create_profiler {
 
 #[macro_export]
 #[cfg(feature = "enable")]
-macro_rules! work {
+macro_rules! time_work {
     ($timer:expr, $work:expr) => {{
         {
             timeloop::scoped_timer!($timer);
@@ -193,7 +193,7 @@ macro_rules! print {
 
 #[macro_export]
 #[cfg(not(feature = "enable"))]
-macro_rules! work {
+macro_rules! time_work {
     ($timer:expr, $work:expr) => {{
         $work
     }};
