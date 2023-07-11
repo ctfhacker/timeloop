@@ -1,5 +1,5 @@
 #![feature(lazy_cell)]
-use timeloop::Timer;
+use timeloop::Profiler;
 
 timeloop::impl_enum!(
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]

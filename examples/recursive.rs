@@ -1,8 +1,7 @@
 #![feature(lazy_cell)]
 use std::time::Duration;
 
-const STACK_SIZE: usize = 1024;
-const END: usize = 32;
+const END: usize = 10;
 const SLEEP_INTERVAL: Duration = Duration::from_millis(50);
 
 timeloop::impl_enum!(
@@ -15,7 +14,7 @@ timeloop::impl_enum!(
     }
 );
 
-timeloop::create_profiler!(BasicTimers, STACK_SIZE);
+timeloop::create_profiler!(BasicTimers);
 
 fn first(val: &mut usize) {
     timeloop::scoped_timer!(BasicTimers::First);
@@ -26,12 +25,12 @@ fn first(val: &mut usize) {
 
     std::thread::sleep(SLEEP_INTERVAL);
 
+    // Force First->First recursion for the first two iterations
     if *val < 2 {
         *val += 1;
         first(val);
-    }
-
-    if *val % 2 == 0 {
+    } else if *val % 2 == 0 {
+        // Force First->Second->First->Second..ect recursion moving forward
         *val += 1;
         second(val);
     }
@@ -62,11 +61,14 @@ fn top() {
 }
 
 fn main() {
+    timeloop::start_profiler!();
+
     let start = std::time::Instant::now();
 
-    timeloop::start!(BasicTimers::Total);
-    top();
-    timeloop::stop!(BasicTimers::Total);
+    timeloop::work!(BasicTimers::Total, {
+        top();
+        top();
+    });
 
     println!("Time: {:?}", start.elapsed());
 
