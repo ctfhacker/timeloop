@@ -126,14 +126,15 @@ where
             let percent = exclusive_time as f64 / total_time as f64 * 100.;
 
             // Include the total time if it was included
-            let inclusive_time_str = {
-                if inclusive_time > 0 {
-                    let total_time_percent = inclusive_time as f64 / total_time as f64 * 100.;
-                    format!("({total_time_percent:6.2}% total time with child timers)")
-                } else {
-                    String::new()
+            let mut inclusive_time_str = String::new();
+
+            if inclusive_time > 0 {
+                let total_time_percent = inclusive_time as f64 / total_time as f64 * 100.;
+                if (total_time_percent - percent).abs() >= 0.001 {
+                    inclusive_time_str =
+                        format!("({total_time_percent:6.2}% total time with child timers)");
                 }
-            };
+            }
 
             // Print the stats for this timer
             println!(
