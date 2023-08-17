@@ -72,10 +72,21 @@ macro_rules! create_profiler {
 
             /// The former inclusive time for this type of timer
             old_inclusive_time: u64,
+
+            /// Number of bytes during this timer
+            bytes_processed: u64,
         }
 
         impl _ScopedTimer {
             fn new(timer: $timer_kind) -> Self {
+                _ScopedTimer::_new(timer, 0)
+            }
+
+            fn new_with_bandwidth(timer: $timer_kind, bytes_processed: u64) -> Self {
+                _ScopedTimer::_new(timer, bytes_processed)
+            }
+
+            fn _new(timer: $timer_kind, bytes_processed: u64) -> Self {
                 // Get the parent timer for this new timer
                 let parent = unsafe {
                     let parent = PROFILER_PARENT;
@@ -93,6 +104,7 @@ macro_rules! create_profiler {
                     start_time: unsafe { core::arch::x86_64::_rdtsc() },
                     parent,
                     old_inclusive_time,
+                    bytes_processed,
                 }
             }
         }
@@ -125,6 +137,9 @@ macro_rules! create_profiler {
                     // Specifically overwritting this timer to always
                     curr_timer.inclusive_time = self.old_inclusive_time + elapsed;
 
+                    // Add this the number of bytes processed by this timer
+                    curr_timer.bytes_processed += self.bytes_processed;
+
                     // Increment the hit count
                     curr_timer.hits += 1;
                 }
@@ -139,6 +154,20 @@ macro_rules! time_work {
     ($timer:expr, $work:expr) => {{
         {
             timeloop::scoped_timer!($timer);
+
+            let result = $work;
+            result
+        }
+    }};
+}
+
+#[macro_export]
+#[cfg(feature = "enable")]
+macro_rules! time_work_with_bandwidth {
+    ($timer:expr, $bytes:expr, $work:expr) => {{
+        {
+            timeloop::scoped_bandwidth_timer!($timer, $bytes);
+
             let result = $work;
             result
         }
@@ -177,14 +206,31 @@ macro_rules! print {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+macro_rules! print_with_iterations {
+    ($iters:expr) => {
+        unsafe {
+            crate::TIMELOOP_PROFILER.print_with_iterations($iters);
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(feature = "enable")]
 macro_rules! scoped_timer {
     ($timer:expr) => {
         let _timer = _ScopedTimer::new($timer);
     };
 }
 
-// Disable feature macros
+#[macro_export]
+#[cfg(feature = "enable")]
+macro_rules! scoped_bandwidth_timer {
+    ($timer:expr, $bytes:expr) => {
+        let _timer = _ScopedTimer::new_with_bandwidth($timer, $bytes);
+    };
+}
 
+// Disable feature macros
 #[macro_export]
 #[cfg(not(feature = "enable"))]
 macro_rules! print {
@@ -193,23 +239,17 @@ macro_rules! print {
 
 #[macro_export]
 #[cfg(not(feature = "enable"))]
-macro_rules! time_work {
-    ($timer:expr, $work:expr) => {{
-        $work
-    }};
-}
-
-#[macro_export]
-#[cfg(not(feature = "enable"))]
 macro_rules! raw_timer {
     ($timer:expr) => {};
 }
 
+/*
 #[macro_export]
 #[cfg(not(feature = "enable"))]
 macro_rules! start_profiler {
     () => {};
 }
+*/
 
 #[macro_export]
 #[cfg(not(feature = "enable"))]
@@ -221,4 +261,16 @@ macro_rules! create_profiler {
 #[cfg(not(feature = "enable"))]
 macro_rules! scoped_timer {
     ($timer:expr) => {};
+}
+
+#[macro_export]
+#[cfg(not(feature = "enable"))]
+macro_rules! print_with_iterations {
+    ($iters:expr) => {};
+}
+
+#[macro_export]
+#[cfg(not(feature = "enable"))]
+macro_rules! scoped_bandwidth_timer {
+    ($timer:expr, $bytes:expr) => {};
 }

@@ -26,6 +26,9 @@ pub struct Timer {
 
     /// The number of times this block was hit
     pub hits: u64,
+
+    /// The number of bytes processed in this timing block
+    pub bytes_processed: u64,
 }
 
 /// The provided `Timer` struct that takes an abstract enum with the available subtimers
@@ -65,6 +68,7 @@ where
                 inclusive_time: 0,
                 exclusive_time: 0,
                 hits: 0,
+                bytes_processed: 0,
             }; variant_count::<T>()],
         }
     }
@@ -97,15 +101,15 @@ where
             variant_length = variant_length.max(format!("{timer:?}").len()).min(60);
         }
 
-        let total_time = stop_time - self.start_time;
+        let total_time_cycles = stop_time - self.start_time;
+        let total_time_secs = total_time_cycles as f64 / os_timer_freq;
 
         println!(
-            "Total time: {:8.2?} ({} cycles)",
-            std::time::Duration::from_secs_f64(total_time as f64 / os_timer_freq),
-            total_time
+            "Total time: {:8.2?} ({total_time_cycles} cycles)",
+            std::time::Duration::from_secs_f64(total_time_secs)
         );
 
-        let mut other = total_time as isize;
+        let mut other = total_time_cycles as isize;
 
         // Calculate the maximum width of the hits column
         let mut hit_width = "HITS".len();
@@ -120,25 +124,37 @@ where
                 inclusive_time,
                 exclusive_time,
                 hits,
+                bytes_processed,
             } = *timer;
 
             other -= exclusive_time as isize;
-            let percent = exclusive_time as f64 / total_time as f64 * 100.;
+            let percent = exclusive_time as f64 / total_time_cycles as f64 * 100.;
 
             // Include the total time if it was included
             let mut inclusive_time_str = String::new();
 
             if inclusive_time > 0 {
-                let total_time_percent = inclusive_time as f64 / total_time as f64 * 100.;
-                if (total_time_percent - percent).abs() >= 0.001 {
-                    inclusive_time_str =
-                        format!("({total_time_percent:6.2}% total time with child timers)");
+                let total_time_percent = inclusive_time as f64 / total_time_cycles as f64 * 100.;
+                if (total_time_percent - percent).abs() >= 0.1 {
+                    inclusive_time_str = format!("({total_time_percent:5.2}% with child timers)");
                 }
+            }
+
+            let mut throughput_str = String::new();
+            if bytes_processed > 0 {
+                const MEGABYTE: f64 = 1024.0 * 1024.0;
+                const GIGABYTE: f64 = 1024.0 * 1024.0 * 1024.0;
+
+                let time = inclusive_time as f64 / os_timer_freq;
+
+                let bytes_per_sec = bytes_processed as f64 / time;
+                let gbs_per_sec = bytes_per_sec / GIGABYTE;
+                throughput_str = format!("{gbs_per_sec:5.3} GBs/sec");
             }
 
             // Print the stats for this timer
             println!(
-                "{:>width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:5.2}% {inclusive_time_str}",
+                "{:>width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
                 format!("{:?}", T::try_from(i).unwrap()),
                 width = variant_length,
                 hit_width = hit_width
@@ -147,10 +163,10 @@ where
 
         // Print the remaining
         println!(
-            "{:<width$} | {:<hit_width$} | {other:14.2?} cycles {:5.2}%",
+            "{:>width$} | {:<hit_width$} | {other:14.2?} cycles {:6.2}%",
             REMAINING_TIME_LABEL,
             "",
-            other as f64 / total_time as f64 * 100.,
+            other as f64 / total_time_cycles as f64 * 100.,
             width = variant_length,
             hit_width = hit_width
         );
