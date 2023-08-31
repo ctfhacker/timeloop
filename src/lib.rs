@@ -11,6 +11,9 @@ use std::time::{Duration, Instant};
 mod macros;
 pub use macros::*;
 
+mod repitition_tester;
+pub use repitition_tester::{RepititionTester, TestResults};
+
 // Check to ensure the profiler is explictly enabled or disabled
 #[cfg(not(any(feature = "enable", feature = "disable")))]
 compile_error!("Turn on the `enable` or `disable` feature");
