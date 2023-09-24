@@ -15,6 +15,9 @@ fn main() {
     // Start the global timer for the profiler
     timeloop::start_profiler!();
 
+    let faults = timeloop::get_page_faults();
+    println!("Page faults: {faults}");
+
     // Example of the work! macro
     timeloop::time_work!(BasicTimers::Phase1, {
         std::thread::sleep(Duration::from_millis(100));

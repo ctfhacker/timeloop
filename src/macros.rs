@@ -101,7 +101,7 @@ macro_rules! create_profiler {
 
                 _ScopedTimer {
                     timer,
-                    start_time: unsafe { core::arch::x86_64::_rdtsc() },
+                    start_time: unsafe { std::arch::x86_64::_rdtsc() },
                     parent,
                     old_inclusive_time,
                     bytes_processed,
@@ -119,7 +119,7 @@ macro_rules! create_profiler {
                     let timer_index: usize = self.timer.into();
 
                     // Calculate the elapsed time for this timer
-                    let stop_time = unsafe { core::arch::x86_64::_rdtsc() };
+                    let stop_time = unsafe { std::arch::x86_64::_rdtsc() };
                     let elapsed = stop_time - self.start_time;
 
                     // If there is a parent timer, remove this elapsed time from the parent
@@ -218,7 +218,7 @@ macro_rules! print_with_iterations {
 #[cfg(feature = "enable")]
 macro_rules! scoped_timer {
     ($timer:expr) => {
-        let _timer = _ScopedTimer::new($timer);
+        let _timer = crate::_ScopedTimer::new($timer);
     };
 }
 
@@ -226,7 +226,7 @@ macro_rules! scoped_timer {
 #[cfg(feature = "enable")]
 macro_rules! scoped_bandwidth_timer {
     ($timer:expr, $bytes:expr) => {
-        let _timer = _ScopedTimer::new_with_bandwidth($timer, $bytes);
+        let _timer = crate::_ScopedTimer::new_with_bandwidth($timer, $bytes);
     };
 }
 
@@ -243,13 +243,11 @@ macro_rules! raw_timer {
     ($timer:expr) => {};
 }
 
-/*
 #[macro_export]
 #[cfg(not(feature = "enable"))]
 macro_rules! start_profiler {
     () => {};
 }
-*/
 
 #[macro_export]
 #[cfg(not(feature = "enable"))]

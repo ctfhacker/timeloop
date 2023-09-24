@@ -5,6 +5,7 @@
 #![feature(generic_const_exprs)]
 
 use std::fmt::Debug;
+use std::io::Read;
 use std::mem::variant_count;
 use std::time::{Duration, Instant};
 
@@ -46,6 +47,36 @@ where
 
     /// Current timers available
     pub timers: [Timer; variant_count::<T>()],
+}
+
+/// Get the page faults from the current process
+#[must_use]
+pub fn get_page_faults() -> u64 {
+    let mut proc_stat = [0u8; 0x400];
+
+    let mut file = std::fs::File::open("/proc/self/stat").expect("Cannot open /proc/self/stat");
+
+    // Read the file into the stack buffer
+    file.read(&mut proc_stat)
+        .expect("Failed to read /proc/self/stat");
+
+    // Split the buffer by whitespace and skip to the first page fault entry
+    let mut stats = proc_stat.split(|byte| *byte == b' ').skip(9);
+
+    // Parse the minor page faults
+    let minor_page_faults = stats.next().unwrap();
+    let minor_page_faults = std::str::from_utf8(minor_page_faults).unwrap();
+    let minor_page_faults = minor_page_faults.parse::<u64>().unwrap();
+
+    let _cminflt = stats.next().unwrap();
+
+    // Parse the major page faults
+    let major_page_faults = stats.next().unwrap();
+    let major_page_faults = std::str::from_utf8(major_page_faults).unwrap();
+    let major_page_faults = major_page_faults.parse::<u64>().unwrap();
+
+    // Return the faults
+    minor_page_faults + major_page_faults
 }
 
 #[inline(always)]
@@ -122,6 +153,7 @@ where
 
         println!("{:>width$} | HITS | TIMES", "TIMER", width = variant_length);
 
+        let mut not_hit = Vec::new();
         for (i, timer) in self.timers.iter().enumerate() {
             let Timer {
                 inclusive_time,
@@ -129,6 +161,12 @@ where
                 hits,
                 bytes_processed,
             } = *timer;
+
+            // If this timer wasn't hit, add it to the not hit list
+            if hits == 0 {
+                not_hit.push(i);
+                continue;
+            }
 
             other -= exclusive_time as isize;
             let percent = exclusive_time as f64 / total_time_cycles as f64 * 100.;
@@ -145,7 +183,7 @@ where
 
             let mut throughput_str = String::new();
             if bytes_processed > 0 {
-                const MEGABYTE: f64 = 1024.0 * 1024.0;
+                // const MEGABYTE: f64 = 1024.0 * 1024.0;
                 const GIGABYTE: f64 = 1024.0 * 1024.0 * 1024.0;
 
                 let time = inclusive_time as f64 / os_timer_freq;
@@ -157,7 +195,7 @@ where
 
             // Print the stats for this timer
             println!(
-                "{:>width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
+                "{:<width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
                 format!("{:?}", T::try_from(i).unwrap()),
                 width = variant_length,
                 hit_width = hit_width
@@ -166,13 +204,20 @@ where
 
         // Print the remaining
         println!(
-            "{:>width$} | {:<hit_width$} | {other:14.2?} cycles {:6.2}%",
+            "{:<width$} | {:<hit_width$} | {other:14.2?} cycles {:6.2}%",
             REMAINING_TIME_LABEL,
             "",
             other as f64 / total_time_cycles as f64 * 100.,
             width = variant_length,
             hit_width = hit_width
         );
+
+        /*
+        println!("The following timers were not hit");
+        for timer in not_hit {
+            println!("{:?}", T::try_from(timer).unwrap());
+        }
+        */
     }
 }
 
