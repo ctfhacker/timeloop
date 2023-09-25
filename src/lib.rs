@@ -135,6 +135,7 @@ where
         println!("Calculated OS frequency: {os_timer_freq}");
 
         let mut variant_length = REMAINING_TIME_LABEL.len();
+        let mut hits_col_width = 1;
 
         // Calculate the longest subtimer variant name
         for i in 0..variant_count::<T>() {
@@ -161,8 +162,6 @@ where
         for Timer { hits, .. } in self.timers.iter() {
             hit_width = hit_width.max(format!("{hits}").len());
         }
-
-        println!("{:>width$} | HITS | TIMES", "TIMER", width = variant_length);
 
         let mut not_hit = Vec::new();
         let mut results = Vec::new();
@@ -206,8 +205,13 @@ where
                 throughput_str = format!("{gbs_per_sec:5.3} GBs/sec");
             }
 
+            hits_col_width = hits_col_width.max(format!("{hits}").len());
+
+            let name = format!("{:?}", T::try_from(i).unwrap());
+            let name = name[..name.len().min(variant_length)].to_string();
+
             results.push(TimerResult {
-                name: format!("{:?}", T::try_from(i).unwrap()),
+                name,
                 hits,
                 exclusive_time,
                 percent,
@@ -217,6 +221,14 @@ where
         }
 
         results.sort_by_key(|timer| timer.exclusive_time);
+
+        println!(
+            "{:<width$} | {:^hits_width$}",
+            "TIMER",
+            "HITS",
+            width = variant_length,
+            hits_width = hits_col_width
+        );
 
         for TimerResult {
             name,
