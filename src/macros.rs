@@ -178,7 +178,7 @@ macro_rules! time_work_with_bandwidth {
 #[cfg(feature = "enable")]
 macro_rules! raw_timer {
     ($timer:expr) => {{
-        _ScopedTimer::new($timer)
+        crate::_ScopedTimer::new($timer)
     }};
 }
 

@@ -35,6 +35,17 @@ pub struct Timer {
     pub bytes_processed: u64,
 }
 
+/// A timed block
+#[derive(Default, Clone)]
+struct TimerResult {
+    pub name: String,
+    pub exclusive_time: u64,
+    pub inclusive_time_str: String,
+    pub hits: u64,
+    pub percent: f64,
+    pub throughput_str: String,
+}
+
 /// The provided `Timer` struct that takes an abstract enum with the available subtimers
 /// to keep track of
 pub struct Profiler<T>
@@ -154,6 +165,8 @@ where
         println!("{:>width$} | HITS | TIMES", "TIMER", width = variant_length);
 
         let mut not_hit = Vec::new();
+        let mut results = Vec::new();
+
         for (i, timer) in self.timers.iter().enumerate() {
             let Timer {
                 inclusive_time,
@@ -193,10 +206,30 @@ where
                 throughput_str = format!("{gbs_per_sec:5.3} GBs/sec");
             }
 
+            results.push(TimerResult {
+                name: format!("{:?}", T::try_from(i).unwrap()),
+                hits,
+                exclusive_time,
+                percent,
+                inclusive_time_str,
+                throughput_str,
+            });
+        }
+
+        results.sort_by_key(|timer| timer.exclusive_time);
+
+        for TimerResult {
+            name,
+            hits,
+            exclusive_time,
+            percent,
+            inclusive_time_str,
+            throughput_str,
+        } in results.iter().rev()
+        {
             // Print the stats for this timer
             println!(
-                "{:<width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
-                format!("{:?}", T::try_from(i).unwrap()),
+                "{name:<width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
                 width = variant_length,
                 hit_width = hit_width
             );
