@@ -239,6 +239,17 @@ macro_rules! print {
 
 #[macro_export]
 #[cfg(not(feature = "enable"))]
+macro_rules! time_work {
+    ($timer:expr, $work:expr) => {{
+        {
+            let result = $work;
+            result
+        }
+    }};
+}
+
+#[macro_export]
+#[cfg(not(feature = "enable"))]
 macro_rules! raw_timer {
     ($timer:expr) => {};
 }
