@@ -132,7 +132,7 @@ where
         assert!(self.start_time > 0, "Profiler was not started.");
 
         let os_timer_freq = calculate_os_frequency();
-        println!("Calculated OS frequency: {os_timer_freq}");
+        eprintln!("Calculated OS frequency: {os_timer_freq}");
 
         let mut variant_length = REMAINING_TIME_LABEL.len();
         let mut hits_col_width = 1;
@@ -150,7 +150,7 @@ where
         let total_time_cycles = stop_time - self.start_time;
         let total_time_secs = total_time_cycles as f64 / os_timer_freq;
 
-        println!(
+        eprintln!(
             "Total time: {:8.2?} ({total_time_cycles} cycles)",
             std::time::Duration::from_secs_f64(total_time_secs)
         );
@@ -222,7 +222,7 @@ where
 
         results.sort_by_key(|timer| timer.exclusive_time);
 
-        println!(
+        eprintln!(
             "{:<width$} | {:^hits_width$}",
             "TIMER",
             "HITS",
@@ -240,7 +240,7 @@ where
         } in results.iter().rev()
         {
             // Print the stats for this timer
-            println!(
+            eprintln!(
                 "{name:<width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
                 width = variant_length,
                 hit_width = hit_width
@@ -248,7 +248,7 @@ where
         }
 
         // Print the remaining
-        println!(
+        eprintln!(
             "{:<width$} | {:<hit_width$} | {other:14.2?} cycles {:6.2}%",
             REMAINING_TIME_LABEL,
             "",
