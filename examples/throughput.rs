@@ -1,3 +1,4 @@
+#![feature(thread_id_value)]
 use std::time::Duration;
 
 timeloop::impl_enum!(

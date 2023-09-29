@@ -1,9 +1,10 @@
+#![feature(lazy_cell)]
 #![feature(thread_id_value)]
 
 use std::time::Duration;
 
 const END: usize = 10;
-const SLEEP_INTERVAL: Duration = Duration::from_millis(50);
+const SLEEP_INTERVAL: Duration = Duration::from_millis(10);
 
 timeloop::impl_enum!(
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -12,6 +13,11 @@ timeloop::impl_enum!(
         Top,
         First,
         Second,
+        CoreSpecific,
+        JoinThreads,
+        SpawnThread,
+        JoinThread,
+        PushThread,
     }
 );
 
@@ -61,15 +67,49 @@ fn top() {
     first(&mut counter);
 }
 
+fn thread_func(i: usize) {
+    timeloop::start_thread!();
+
+    timeloop::scoped_timer!(BasicTimers::Total);
+
+    /*
+    for _ in 0..i {
+        timeloop::time_work!(BasicTimers::CoreSpecific, {
+            std::thread::sleep(SLEEP_INTERVAL);
+        });
+    }
+    */
+
+    top();
+    top();
+
+    timeloop::stop_thread!();
+}
+
 fn main() {
     timeloop::start_profiler!();
 
     let start = std::time::Instant::now();
 
-    timeloop::time_work!(BasicTimers::Total, {
-        top();
-        top();
-    });
+    for k in 0..50 {
+        let mut threads = Vec::with_capacity(8);
+
+        for i in 1..=4 {
+            let t = timeloop::time_work!(BasicTimers::SpawnThread, {
+                std::thread::spawn(move || thread_func(k * 50 + i))
+            });
+
+            timeloop::time_work!(BasicTimers::PushThread, {
+                threads.push(t);
+            });
+        }
+
+        timeloop::time_work!(BasicTimers::JoinThreads, {
+            for thread in threads {
+                thread.join();
+            }
+        });
+    }
 
     println!("Time: {:?}", start.elapsed());
 

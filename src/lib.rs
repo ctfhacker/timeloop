@@ -20,7 +20,7 @@ pub use repitition_tester::{RepititionTester, TestResults};
 compile_error!("Turn on the `enable` or `disable` feature");
 
 /// A timed block
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Timer {
     /// The amount of time spent in this timing block (without child blocks)
     pub exclusive_time: u64,
@@ -33,6 +33,19 @@ pub struct Timer {
 
     /// The number of bytes processed in this timing block
     pub bytes_processed: u64,
+}
+
+impl std::ops::Add for Timer {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            exclusive_time: self.exclusive_time + rhs.exclusive_time,
+            inclusive_time: self.inclusive_time + rhs.inclusive_time,
+            hits: self.hits + rhs.hits,
+            bytes_processed: self.bytes_processed + rhs.bytes_processed,
+        }
+    }
 }
 
 /// A timed block
@@ -48,16 +61,20 @@ struct TimerResult {
 
 /// The provided `Timer` struct that takes an abstract enum with the available subtimers
 /// to keep track of
-pub struct Profiler<T>
+#[derive(Debug, Clone)]
+pub struct Profiler<T, const THREADS: usize>
 where
     [(); variant_count::<T>()]:,
     T: std::fmt::Debug,
 {
-    /// The global starting time for this set of timers
-    pub start_time: u64,
+    /// The global elapsed
+    pub thread_times: [u64; THREADS],
+
+    /// The status of the the thread indexed timer
+    pub thread_status: [ThreadTimerStatus; THREADS],
 
     /// Current timers available
-    pub timers: [Timer; variant_count::<T>()],
+    pub timers: [[Timer; variant_count::<T>()]; THREADS],
 }
 
 /// Get the page faults from the current process
@@ -95,9 +112,16 @@ fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
 
+/// The current thread timer status
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ThreadTimerStatus {
+    Stopped,
+    Running,
+}
+
 const REMAINING_TIME_LABEL: &'static str = "Remainder";
 
-impl<T> Profiler<T>
+impl<T, const THREADS: usize> Profiler<T, THREADS>
 where
     [(); variant_count::<T>()]:,
     T: Debug + Copy + Clone + PartialEq + Eq,
@@ -108,20 +132,40 @@ where
     /// Create a new timer struct
     pub const fn new() -> Self {
         Self {
-            start_time: 0,
-            timers: [Timer {
+            thread_times: [0; THREADS],
+            thread_status: [ThreadTimerStatus::Stopped; THREADS],
+
+            timers: [[Timer {
                 inclusive_time: 0,
                 exclusive_time: 0,
                 hits: 0,
                 bytes_processed: 0,
-            }; variant_count::<T>()],
+            }; variant_count::<T>()]; THREADS],
         }
     }
 
-    /// Start the timer for the profiler itself
+    /// Start the timer for the given thread
     #[inline(always)]
-    pub fn start(&mut self) {
-        self.start_time = rdtsc();
+    pub fn start(&mut self, thread_id: usize) {
+        assert!(
+            self.thread_status[thread_id] == ThreadTimerStatus::Stopped,
+            "Attempted to start an already started timer"
+        );
+
+        self.thread_times[thread_id] = self.thread_times[thread_id].wrapping_sub(rdtsc());
+        self.thread_status[thread_id] = ThreadTimerStatus::Running;
+    }
+
+    /// Stop the timer for the given thread
+    #[inline(always)]
+    pub fn stop(&mut self, thread_id: usize) {
+        assert!(
+            self.thread_status[thread_id] == ThreadTimerStatus::Running,
+            "Attempted to stop an already stopped timer"
+        );
+
+        self.thread_times[thread_id] = self.thread_times[thread_id].wrapping_add(rdtsc());
+        self.thread_status[thread_id] = ThreadTimerStatus::Stopped;
     }
 
     /// Print a basic percentage-based status of the timers state
@@ -129,7 +173,52 @@ where
         // Immediately stop the profiler's timer at the beginning of this function
         let stop_time = rdtsc();
 
-        assert!(self.start_time > 0, "Profiler was not started.");
+        for thread_id in 0..THREADS {
+            // Check if this timer is running and stop it if it is
+            if self.thread_status[thread_id] == ThreadTimerStatus::Running {
+                eprintln!("Thread {thread_id} was still running during print. Stopping it.");
+                self.thread_times[thread_id] = self.thread_times[thread_id].wrapping_add(stop_time);
+                self.thread_status[thread_id] = ThreadTimerStatus::Running;
+            }
+        }
+
+        // Initialize the accumulated timers across all threads
+        let mut acc = [Timer {
+            inclusive_time: 0,
+            exclusive_time: 0,
+            hits: 0,
+            bytes_processed: 0,
+        }; variant_count::<T>()];
+
+        // Fold all of the current timers into the first one
+        let mut total_time_cycles = 0;
+        for thread_id in 0..THREADS {
+            // Ignore thread if it wasn't used
+            if self.timers[thread_id].iter().map(|x| x.hits).sum::<u64>() == 0 {
+                continue;
+            }
+
+            // Get the current thread time
+            let thread_time = self.thread_times[thread_id];
+
+            // Add this thread's time to the total time
+            total_time_cycles += thread_time;
+
+            for timer_index in 0..variant_count::<T>() {
+                let Timer {
+                    inclusive_time,
+                    exclusive_time,
+                    hits,
+                    bytes_processed,
+                } = self.timers[thread_id][timer_index];
+
+                // Add the current timer to the accumulated timer
+                acc[timer_index].inclusive_time += inclusive_time;
+                acc[timer_index].exclusive_time += exclusive_time;
+                acc[timer_index].hits += hits;
+                acc[timer_index].bytes_processed += bytes_processed;
+            }
+        }
 
         let os_timer_freq = calculate_os_frequency();
         eprintln!("Calculated OS frequency: {os_timer_freq}");
@@ -147,7 +236,6 @@ where
             variant_length = variant_length.max(format!("{timer:?}").len()).min(60);
         }
 
-        let total_time_cycles = stop_time - self.start_time;
         let total_time_secs = total_time_cycles as f64 / os_timer_freq;
 
         eprintln!(
@@ -159,14 +247,14 @@ where
 
         // Calculate the maximum width of the hits column
         let mut hit_width = "HITS".len();
-        for Timer { hits, .. } in self.timers.iter() {
+        for Timer { hits, .. } in acc.iter() {
             hit_width = hit_width.max(format!("{hits}").len());
         }
 
         let mut not_hit = Vec::new();
         let mut results = Vec::new();
 
-        for (i, timer) in self.timers.iter().enumerate() {
+        for (i, timer) in acc.iter().enumerate() {
             let Timer {
                 inclusive_time,
                 exclusive_time,
@@ -188,6 +276,7 @@ where
 
             if inclusive_time > 0 {
                 let total_time_percent = inclusive_time as f64 / total_time_cycles as f64 * 100.;
+
                 if (total_time_percent - percent).abs() >= 0.1 {
                     inclusive_time_str = format!("({total_time_percent:5.2}% with child timers)");
                 }

@@ -1,3 +1,5 @@
+#![feature(thread_id_value)]
+
 use rand::prelude::SliceRandom;
 
 use std::io::Read;

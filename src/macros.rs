@@ -53,12 +53,15 @@ macro_rules! impl_enum {
 #[cfg(feature = "enable")]
 macro_rules! create_profiler {
     ($timer_kind:ident) => {
+        pub const NUM_THREADS: usize = 4096;
+
         // Create the static profiler
-        static mut TIMELOOP_PROFILER: timeloop::Profiler<$timer_kind> =
-            timeloop::Profiler::<$timer_kind>::new();
+        static mut TIMELOOP_PROFILER: timeloop::Profiler<$timer_kind, NUM_THREADS> =
+            timeloop::Profiler::<$timer_kind, NUM_THREADS>::new();
 
         // The current node being profiled, used to save who called which timer
-        static mut PROFILER_PARENT: Option<$timer_kind> = None;
+        static mut PROFILER_PARENT: [Option<$timer_kind>; crate::NUM_THREADS] =
+            [None; crate::NUM_THREADS];
 
         pub struct _ScopedTimer {
             /// This kind of this current timer
@@ -77,6 +80,18 @@ macro_rules! create_profiler {
             bytes_processed: u64,
         }
 
+        /// Get the ID for the current thread
+        pub fn thread_id() -> usize {
+            let thread_id = std::thread::current().id().as_u64().get() as usize;
+
+            assert!(
+                thread_id < crate::NUM_THREADS,
+                "Too many threads. Increase timeloop::NUM_THREADS"
+            );
+
+            thread_id
+        }
+
         impl _ScopedTimer {
             fn new(timer: $timer_kind) -> Self {
                 _ScopedTimer::_new(timer, 0)
@@ -87,17 +102,20 @@ macro_rules! create_profiler {
             }
 
             fn _new(timer: $timer_kind, bytes_processed: u64) -> Self {
+                let thread_id = thread_id();
+
                 // Get the parent timer for this new timer
                 let parent = unsafe {
-                    let parent = PROFILER_PARENT;
-                    PROFILER_PARENT = Some(timer);
+                    let parent = PROFILER_PARENT[thread_id];
+                    PROFILER_PARENT[thread_id] = Some(timer);
                     parent
                 };
 
                 let timer_index: usize = timer.into();
 
-                let old_inclusive_time =
-                    unsafe { crate::TIMELOOP_PROFILER.timers[timer_index].inclusive_time };
+                let old_inclusive_time = unsafe {
+                    crate::TIMELOOP_PROFILER.timers[thread_id][timer_index].inclusive_time
+                };
 
                 _ScopedTimer {
                     timer,
@@ -111,9 +129,11 @@ macro_rules! create_profiler {
 
         impl Drop for _ScopedTimer {
             fn drop(&mut self) {
+                let thread_id = thread_id();
+
                 unsafe {
                     // Reset the current parent node
-                    PROFILER_PARENT = self.parent;
+                    PROFILER_PARENT[thread_id] = self.parent;
 
                     // Get the timer index for this current timer
                     let timer_index: usize = self.timer.into();
@@ -125,12 +145,13 @@ macro_rules! create_profiler {
                     // If there is a parent timer, remove this elapsed time from the parent
                     if let Some(parent) = self.parent {
                         let mut parent_timer =
-                            &mut crate::TIMELOOP_PROFILER.timers[parent as usize];
+                            &mut crate::TIMELOOP_PROFILER.timers[thread_id][parent as usize];
                         parent_timer.exclusive_time =
                             parent_timer.exclusive_time.wrapping_sub(elapsed);
                     }
 
-                    let mut curr_timer = &mut crate::TIMELOOP_PROFILER.timers[timer_index];
+                    let mut curr_timer =
+                        &mut crate::TIMELOOP_PROFILER.timers[thread_id][timer_index];
 
                     // Update this timer's elapsed time
                     curr_timer.exclusive_time = curr_timer.exclusive_time.wrapping_add(elapsed);
@@ -185,11 +206,38 @@ macro_rules! raw_timer {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+macro_rules! start_thread {
+    () => {
+        unsafe {
+            {
+                let thread_id = crate::thread_id();
+                crate::TIMELOOP_PROFILER.start(thread_id);
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(feature = "enable")]
 macro_rules! start_profiler {
     () => {
         unsafe {
             {
-                crate::TIMELOOP_PROFILER.start();
+                let thread_id = crate::thread_id();
+                crate::TIMELOOP_PROFILER.start(thread_id);
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(feature = "enable")]
+macro_rules! stop_thread {
+    () => {
+        unsafe {
+            {
+                let thread_id = crate::thread_id();
+                crate::TIMELOOP_PROFILER.stop(thread_id);
             }
         }
     };
@@ -258,6 +306,18 @@ macro_rules! raw_timer {
 #[macro_export]
 #[cfg(not(feature = "enable"))]
 macro_rules! start_profiler {
+    () => {};
+}
+
+#[macro_export]
+#[cfg(not(feature = "enable"))]
+macro_rules! start_thread {
+    () => {};
+}
+
+#[macro_export]
+#[cfg(not(feature = "enable"))]
+macro_rules! stop_thread {
     () => {};
 }
 
