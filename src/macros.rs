@@ -126,13 +126,14 @@ macro_rules! create_profiler {
                     if let Some(parent) = self.parent {
                         let mut parent_timer =
                             &mut crate::TIMELOOP_PROFILER.timers[parent as usize];
-                        parent_timer.exclusive_time -= elapsed;
+                        parent_timer.exclusive_time =
+                            parent_timer.exclusive_time.wrapping_sub(elapsed);
                     }
 
                     let mut curr_timer = &mut crate::TIMELOOP_PROFILER.timers[timer_index];
 
                     // Update this timer's elapsed time
-                    curr_timer.exclusive_time += elapsed;
+                    curr_timer.exclusive_time = curr_timer.exclusive_time.wrapping_add(elapsed);
 
                     // Specifically overwritting this timer to always
                     curr_timer.inclusive_time = self.old_inclusive_time + elapsed;
