@@ -348,19 +348,3 @@ macro_rules! print_with_iterations {
 macro_rules! scoped_bandwidth_timer {
     ($timer:expr, $bytes:expr) => {};
 }
-
-#[macro_export]
-#[cfg(not(feature = "enable"))]
-macro_rules! start_thread {
-    () => {
-        unsafe {}
-    };
-}
-
-#[macro_export]
-#[cfg(not(feature = "enable"))]
-macro_rules! stop_thread {
-    () => {
-        unsafe {}
-    };
-}
