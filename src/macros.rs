@@ -80,7 +80,7 @@ macro_rules! create_profiler {
             bytes_processed: u64,
         }
 
-        /// Get the ID for the current thread
+        /// Get the ID for the current thread that is guarenteed to be non-zero
         pub fn thread_id() -> usize {
             let thread_id = std::thread::current().id().as_u64().get() as usize;
 
@@ -88,6 +88,10 @@ macro_rules! create_profiler {
                 thread_id < crate::NUM_THREADS,
                 "Too many threads. Increase timeloop::NUM_THREADS"
             );
+
+            extern "C" {
+                fn pthread_self() -> u64;
+            }
 
             thread_id
         }

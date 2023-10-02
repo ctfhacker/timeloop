@@ -147,10 +147,9 @@ where
     /// Start the timer for the given thread
     #[inline(always)]
     pub fn start(&mut self, thread_id: usize) {
-        assert!(
-            self.thread_status[thread_id] == ThreadTimerStatus::Stopped,
-            "Attempted to start an already started timer"
-        );
+        if self.thread_status[thread_id] != ThreadTimerStatus::Stopped {
+            println!("Attempted to start an already started timer on thread {thread_id}");
+        }
 
         self.thread_times[thread_id] = self.thread_times[thread_id].wrapping_sub(rdtsc());
         self.thread_status[thread_id] = ThreadTimerStatus::Running;
@@ -159,10 +158,9 @@ where
     /// Stop the timer for the given thread
     #[inline(always)]
     pub fn stop(&mut self, thread_id: usize) {
-        assert!(
-            self.thread_status[thread_id] == ThreadTimerStatus::Running,
-            "Attempted to stop an already stopped timer"
-        );
+        if self.thread_status[thread_id] != ThreadTimerStatus::Running {
+            println!("Attempted to stop an already stopped timer {thread_id}");
+        }
 
         self.thread_times[thread_id] = self.thread_times[thread_id].wrapping_add(rdtsc());
         self.thread_status[thread_id] = ThreadTimerStatus::Stopped;
