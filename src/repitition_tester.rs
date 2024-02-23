@@ -10,11 +10,20 @@ enum TestingState {
 /// Statistics for an individual test case
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TestCase {
-    /// The time (in cycles) for this iteration
-    time: u64,
+    /// The time (in cycles) for this test case
+    pub cycles: u64,
+
+    /// The time [`Duration`] for this test case
+    pub time: Duration,
 
     /// The page faults for this iteration
-    page_faults: u64,
+    pub page_faults: u64,
+
+    /// Bytes per second if throughput is given
+    pub bytes_per_second: Option<f64>,
+
+    /// Number of bytes processed per page fault
+    pub bytes_per_page_fault: Option<f64>,
 }
 
 /// The results for a repitition tester
@@ -30,10 +39,13 @@ pub struct TestResults {
     total_page_faults: u64,
 
     /// The statistics for the longest test case
-    max: TestCase,
+    pub max: TestCase,
 
     /// The statistics for the shortest test case
-    min: TestCase,
+    pub min: TestCase,
+
+    /// The statistics for the average test case
+    pub avg: TestCase,
 }
 
 impl Default for TestResults {
@@ -43,11 +55,15 @@ impl Default for TestResults {
             total_time: 0,
             total_page_faults: 0,
             max: TestCase {
-                time: 0,
+                cycles: 0,
                 ..Default::default()
             },
             min: TestCase {
-                time: u64::MAX,
+                cycles: u64::MAX,
+                ..Default::default()
+            },
+            avg: TestCase {
+                cycles: u64::MAX,
                 ..Default::default()
             },
         }
@@ -55,53 +71,44 @@ impl Default for TestResults {
 }
 
 impl TestResults {
-    fn _print(&self, byte_count: Option<u64>) {
-        // Get the OS frequency
-        let os_freq = crate::calculate_os_frequency();
+    /// Print the results of this test
+    pub fn print(&self) {
+        let TestResults {
+            count,
+            total_time,
+            total_page_faults,
+            max,
+            min,
+            avg,
+        } = self;
 
-        let min_time_secs = std::time::Duration::from_secs_f64(self.min.time as f64 / os_freq);
-        let max_time_secs = std::time::Duration::from_secs_f64(self.max.time as f64 / os_freq);
-        let avg_time_secs = std::time::Duration::from_secs_f64(
-            self.total_time as f64 / self.count as f64 / os_freq,
-        );
+        for (title, results) in [("Min", min), ("Max", max), ("Avg", avg)] {
+            print!("{title}: {:8.2?} ({:8.2?})", results.cycles, results.time);
 
-        let mut min_byte_per_sec = None;
-        let mut max_byte_per_sec = None;
-        let mut avg_byte_per_sec = None;
+            if let Some(bytes_per_second) = results.bytes_per_second {
+                let (num, unit) = if bytes_per_second > 1024. * 1024. * 1024. {
+                    (bytes_per_second as f64 / 1024. / 1024. / 1024., "GB")
+                } else if bytes_per_second > 1024. * 1024. {
+                    (bytes_per_second as f64 / 1024. / 1024., "MB")
+                } else if bytes_per_second > 1024. {
+                    (bytes_per_second as f64 / 1024., "KB")
+                } else {
+                    (bytes_per_second as f64, "B")
+                };
 
-        if let Some(byte_count) = byte_count {
-            if self.min.page_faults > 0 {
-                min_byte_per_sec = Some(format!(
-                    "MB/sec {:8.2?} KB/fault {:8.2}",
-                    byte_count as f64 / min_time_secs.as_secs_f64() / 1024. / 1024.,
-                    byte_count as f64 / self.min.page_faults as f64 / 1024.
-                ));
+                print!(
+                    " {num:8.2} {unit}/sec | PageFaults: {}",
+                    results.page_faults,
+                );
             }
 
-            if self.max.page_faults > 0 {
-                max_byte_per_sec = Some(format!(
-                    "MB/sec {:8.2?} KB/fault {:8.2}",
-                    byte_count as f64 / max_time_secs.as_secs_f64() / 1024. / 1024.,
-                    byte_count as f64 / self.max.page_faults as f64 / 1024.
-                ));
-            }
+            println!();
+        }
 
-            avg_byte_per_sec = Some(format!(
-                "MB/sec {:8.2?} KB/fault {:8.2}",
-                byte_count as f64 / avg_time_secs.as_secs_f64() / 1024. / 1024.,
-                (byte_count * self.count) as f64 / self.total_page_faults as f64 / 1024.
-            ));
-        };
-
-        println!(
-            "Min: {:12?} ({min_time_secs:8.2?}) {} Faults: {:8}",
-            self.min.time,
-            min_byte_per_sec.unwrap_or_else(|| "".to_string()),
-            self.min.page_faults,
-        );
+        /*
         println!(
             "Max: {:12?} ({max_time_secs:8.2?}) {} Faults: {:8}",
-            self.max.time,
+            self.max.cycles,
             max_byte_per_sec.unwrap_or_else(|| "".to_string()),
             self.max.page_faults,
         );
@@ -111,16 +118,7 @@ impl TestResults {
             avg_byte_per_sec.unwrap_or_else(|| "".to_string()),
             self.total_page_faults / self.count
         );
-    }
-
-    /// Print the results of this test
-    pub fn print(&self) {
-        self._print(None);
-    }
-
-    /// Print the results with the number of bytes processed for this test
-    pub fn print_with_bytes(&self, bytes: u64) {
-        self._print(Some(bytes));
+        */
     }
 }
 
@@ -147,7 +145,7 @@ pub struct RepititionTester {
     elapsed_time: u64,
 
     /// The results of this current test
-    pub results: TestResults,
+    results: TestResults,
 }
 
 fn rdtsc() -> u64 {
@@ -179,6 +177,53 @@ impl RepititionTester {
         self.results = TestResults::default();
     }
 
+    /// Get the results of a test
+    pub fn results(&mut self) -> TestResults {
+        self._results(None)
+    }
+
+    /// Get the results of a test that used `bytes` number of bytes
+    pub fn results_with_throughput(&mut self, bytes: u64) -> TestResults {
+        self._results(Some(bytes))
+    }
+
+    fn _results(&mut self, bytes: Option<u64>) -> TestResults {
+        let os_freq = crate::calculate_os_frequency();
+
+        self.results.min.time =
+            std::time::Duration::from_secs_f64(self.results.min.cycles as f64 / os_freq);
+        self.results.max.time =
+            std::time::Duration::from_secs_f64(self.results.max.cycles as f64 / os_freq);
+        self.results.max.time = std::time::Duration::from_secs_f64(
+            self.results.total_time as f64 / self.results.count as f64 / os_freq,
+        );
+
+        // Update the average time results
+        self.results.avg.cycles = self.results.total_time / self.results.count;
+        self.results.avg.time = Duration::from_secs_f64(
+            self.results.total_time as f64 / os_freq / self.results.count as f64,
+        );
+
+        // Adjust each of the min, max
+        if let Some(bytes) = bytes {
+            for curr_results in [
+                &mut self.results.min,
+                &mut self.results.max,
+                &mut self.results.avg,
+            ] {
+                curr_results.bytes_per_second =
+                    Some(bytes as f64 / curr_results.time.as_secs_f64());
+
+                if curr_results.page_faults > 0 {
+                    curr_results.bytes_per_page_fault =
+                        Some(bytes as f64 / curr_results.page_faults as f64);
+                }
+            }
+        }
+
+        self.results
+    }
+
     pub fn is_testing(&mut self) -> bool {
         if !matches!(self.state, TestingState::Running) {
             return false;
@@ -201,15 +246,15 @@ impl RepititionTester {
                 self.results.total_time += self.elapsed_time;
                 self.results.total_page_faults += self.page_faults;
 
-                if self.elapsed_time < self.results.min.time {
-                    self.results.min.time = self.elapsed_time;
+                if self.elapsed_time < self.results.min.cycles {
+                    self.results.min.cycles = self.elapsed_time;
                     self.results.min.page_faults = self.page_faults;
                     self.start_time = Instant::now();
                     // println!("New min! {:?}", self.results.min_time);
                 }
 
-                if self.elapsed_time > self.results.max.time {
-                    self.results.max.time = self.elapsed_time;
+                if self.elapsed_time > self.results.max.cycles {
+                    self.results.max.cycles = self.elapsed_time;
                     self.results.max.page_faults = self.page_faults;
                 }
 
