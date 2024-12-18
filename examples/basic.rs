@@ -2,16 +2,7 @@
 
 use std::time::Duration;
 
-timeloop::impl_enum!(
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    pub enum BasicTimers {
-        Phase1,
-        Phase2,
-        Phase3,
-    }
-);
-
-timeloop::create_profiler!(BasicTimers);
+timeloop::create_profiler!();
 
 fn main() {
     // Start the global timer for the profiler
@@ -21,18 +12,18 @@ fn main() {
     println!("Page faults: {faults}");
 
     // Example of the work! macro
-    timeloop::time_work!(BasicTimers::Phase1, {
+    timeloop::time_work!("phase1", {
         std::thread::sleep(Duration::from_millis(100));
     });
 
     // Example of the scoped_timer! macro
     {
-        timeloop::scoped_timer!(BasicTimers::Phase2);
+        timeloop::scoped_timer!("phase2");
         std::thread::sleep(Duration::from_millis(200));
     }
 
     // Example of the work! macro returning a value
-    let value = timeloop::time_work!(BasicTimers::Phase3, {
+    let value = timeloop::time_work!("phase3", {
         std::thread::sleep(Duration::from_millis(300));
         10
     });

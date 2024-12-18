@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 rand = "0.8.5"
+timeloop_proc_macro = { path = "./timeloop_proc_macro" }
 
 [features]
 default = ["enable"]
@@ -17,3 +18,6 @@ disable = []
 [dev-dependencies]
 libc = "0.2.148"
 rand = "0.8.5"
+
+[profile.release]
+debug = true

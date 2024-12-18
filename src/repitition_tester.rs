@@ -87,13 +87,13 @@ impl TestResults {
 
             if let Some(bytes_per_second) = results.bytes_per_second {
                 let (num, unit) = if bytes_per_second > 1024. * 1024. * 1024. {
-                    (bytes_per_second as f64 / 1024. / 1024. / 1024., "GB")
+                    (bytes_per_second / 1024. / 1024. / 1024., "GB")
                 } else if bytes_per_second > 1024. * 1024. {
-                    (bytes_per_second as f64 / 1024. / 1024., "MB")
+                    (bytes_per_second / 1024. / 1024., "MB")
                 } else if bytes_per_second > 1024. {
-                    (bytes_per_second as f64 / 1024., "KB")
+                    (bytes_per_second / 1024., "KB")
                 } else {
-                    (bytes_per_second as f64, "B")
+                    (bytes_per_second, "B")
                 };
 
                 print!(
@@ -155,6 +155,8 @@ fn rdtsc() -> u64 {
 impl RepititionTester {
     #[must_use]
     pub fn new(duration: Duration) -> Self {
+        let pf = crate::get_page_faults();
+
         Self {
             state: TestingState::Running,
             duration,
@@ -189,6 +191,10 @@ impl RepititionTester {
 
     fn _results(&mut self, bytes: Option<u64>) -> TestResults {
         let os_freq = crate::calculate_os_frequency();
+
+        if self.results.count == 0 {
+            return TestResults::default();
+        }
 
         self.results.min.time =
             std::time::Duration::from_secs_f64(self.results.min.cycles as f64 / os_freq);
@@ -257,14 +263,14 @@ impl RepititionTester {
                     self.results.max.cycles = self.elapsed_time;
                     self.results.max.page_faults = self.page_faults;
                 }
-
-                // Reset the stats
-                self.start_count = 0;
-                self.stop_count = 0;
-                self.elapsed_time = 0;
-                self.page_faults = 0;
             }
         }
+
+        // Reset the stats
+        self.start_count = 0;
+        self.stop_count = 0;
+        self.elapsed_time = 0;
+        self.page_faults = 0;
 
         // Keep testing!
         true

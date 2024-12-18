@@ -198,7 +198,7 @@ fn main() {
                     format!("{:?}", params.allocation),
                     func.0
                 );
-                tester.results.print_with_bytes(EXPECTED_FILE_SIZE);
+                tester.results_with_throughput(EXPECTED_FILE_SIZE).print();
             }
         }
     }

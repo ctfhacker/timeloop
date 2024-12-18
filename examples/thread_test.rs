@@ -6,26 +6,10 @@ use std::time::Duration;
 const END: usize = 10;
 const SLEEP_INTERVAL: Duration = Duration::from_millis(10);
 
-timeloop::impl_enum!(
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    pub enum BasicTimers {
-        Total,
-        Top,
-        First,
-        Second,
-        CoreSpecific,
-        JoinThreads,
-        SpawnThread,
-        JoinThread,
-        PushThread,
-    }
-);
+timeloop::create_profiler!();
 
-timeloop::create_profiler!(BasicTimers);
-
+#[timeloop::profile]
 fn first(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::First);
-
     if *val >= END {
         return;
     }
@@ -43,9 +27,8 @@ fn first(val: &mut usize) {
     }
 }
 
+#[timeloop::profile]
 fn second(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::Second);
-
     if *val >= END {
         return;
     }
@@ -58,9 +41,8 @@ fn second(val: &mut usize) {
     }
 }
 
+#[timeloop::profile]
 fn top() {
-    timeloop::scoped_timer!(BasicTimers::Top);
-
     std::thread::sleep(SLEEP_INTERVAL / 2);
 
     let mut counter = 0;
@@ -70,7 +52,7 @@ fn top() {
 fn thread_func(i: usize) {
     timeloop::start_thread!();
 
-    timeloop::scoped_timer!(BasicTimers::Total);
+    timeloop::scoped_timer!("Total");
 
     /*
     for _ in 0..i {
@@ -95,16 +77,16 @@ fn main() {
         let mut threads = Vec::with_capacity(8);
 
         for i in 1..=4 {
-            let t = timeloop::time_work!(BasicTimers::SpawnThread, {
+            let t = timeloop::time_work!("Spawn Thread", {
                 std::thread::spawn(move || thread_func(k * 50 + i))
             });
 
-            timeloop::time_work!(BasicTimers::PushThread, {
+            timeloop::time_work!("Push Thread", {
                 threads.push(t);
             });
         }
 
-        timeloop::time_work!(BasicTimers::JoinThreads, {
+        timeloop::time_work!("Join Threads", {
             for thread in threads {
                 thread.join();
             }

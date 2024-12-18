@@ -5,21 +5,10 @@ use std::time::Duration;
 const END: usize = 10;
 const SLEEP_INTERVAL: Duration = Duration::from_millis(50);
 
-timeloop::impl_enum!(
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    pub enum BasicTimers {
-        Total,
-        Top,
-        First,
-        Second,
-    }
-);
+timeloop::create_profiler!();
 
-timeloop::create_profiler!(BasicTimers);
-
+#[timeloop::profile]
 fn first(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::First);
-
     if *val >= END {
         return;
     }
@@ -37,9 +26,8 @@ fn first(val: &mut usize) {
     }
 }
 
+#[timeloop::profile]
 fn second(val: &mut usize) {
-    timeloop::scoped_timer!(BasicTimers::Second);
-
     if *val >= END {
         return;
     }
@@ -52,9 +40,8 @@ fn second(val: &mut usize) {
     }
 }
 
+#[timeloop::profile]
 fn top() {
-    timeloop::scoped_timer!(BasicTimers::Top);
-
     std::thread::sleep(SLEEP_INTERVAL / 2);
 
     let mut counter = 0;
@@ -66,7 +53,7 @@ fn main() {
 
     let start = std::time::Instant::now();
 
-    timeloop::time_work!(BasicTimers::Total, {
+    timeloop::time_work!("Total", {
         top();
         top();
     });

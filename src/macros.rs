@@ -52,26 +52,26 @@ macro_rules! impl_enum {
 #[macro_export]
 #[cfg(feature = "enable")]
 macro_rules! create_profiler {
-    ($timer_kind:ident) => {
+    () => {
         pub const NUM_THREADS: usize = 4096;
 
         // Create the static profiler
-        static mut TIMELOOP_PROFILER: timeloop::Profiler<$timer_kind, NUM_THREADS> =
-            timeloop::Profiler::<$timer_kind, NUM_THREADS>::new();
+        static mut TIMELOOP_PROFILER: timeloop::Profiler<NUM_THREADS> =
+            timeloop::Profiler::<NUM_THREADS>::new();
 
         // The current node being profiled, used to save who called which timer
-        static mut PROFILER_PARENT: [Option<$timer_kind>; crate::NUM_THREADS] =
+        static mut PROFILER_PARENT: [Option<&'static str>; crate::NUM_THREADS] =
             [None; crate::NUM_THREADS];
 
         pub struct _ScopedTimer {
-            /// This kind of this current timer
-            timer: $timer_kind,
+            /// This name of this current timer
+            timer: &'static str,
 
             /// The starting time for this timer
             start_time: u64,
 
             /// The parent of this timer
-            parent: Option<$timer_kind>,
+            parent: Option<&'static str>,
 
             /// The former inclusive time for this type of timer
             old_inclusive_time: u64,
@@ -97,15 +97,15 @@ macro_rules! create_profiler {
         }
 
         impl _ScopedTimer {
-            fn new(timer: $timer_kind) -> Self {
+            fn new(timer: &'static str) -> Self {
                 _ScopedTimer::_new(timer, 0)
             }
 
-            fn new_with_bandwidth(timer: $timer_kind, bytes_processed: u64) -> Self {
+            fn new_with_bandwidth(timer: &'static str, bytes_processed: u64) -> Self {
                 _ScopedTimer::_new(timer, bytes_processed)
             }
 
-            fn _new(timer: $timer_kind, bytes_processed: u64) -> Self {
+            fn _new(timer: &'static str, bytes_processed: u64) -> Self {
                 let thread_id = thread_id();
 
                 // Get the parent timer for this new timer
@@ -115,10 +115,10 @@ macro_rules! create_profiler {
                     parent
                 };
 
-                let timer_index: usize = timer.into();
-
                 let old_inclusive_time = unsafe {
-                    crate::TIMELOOP_PROFILER.timers[thread_id][timer_index].inclusive_time
+                    crate::TIMELOOP_PROFILER
+                        .get_timer(thread_id, timer)
+                        .inclusive_time
                 };
 
                 _ScopedTimer {
@@ -139,9 +139,6 @@ macro_rules! create_profiler {
                     // Reset the current parent node
                     PROFILER_PARENT[thread_id] = self.parent;
 
-                    // Get the timer index for this current timer
-                    let timer_index: usize = self.timer.into();
-
                     // Calculate the elapsed time for this timer
                     let stop_time = unsafe { std::arch::x86_64::_rdtsc() };
                     let elapsed = stop_time - self.start_time;
@@ -149,13 +146,14 @@ macro_rules! create_profiler {
                     // If there is a parent timer, remove this elapsed time from the parent
                     if let Some(parent) = self.parent {
                         let mut parent_timer =
-                            &mut crate::TIMELOOP_PROFILER.timers[thread_id][parent as usize];
+                            &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, parent);
+
                         parent_timer.exclusive_time =
                             parent_timer.exclusive_time.wrapping_sub(elapsed);
                     }
 
                     let mut curr_timer =
-                        &mut crate::TIMELOOP_PROFILER.timers[thread_id][timer_index];
+                        &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, self.timer);
 
                     // Update this timer's elapsed time
                     curr_timer.exclusive_time = curr_timer.exclusive_time.wrapping_add(elapsed);
@@ -328,7 +326,7 @@ macro_rules! stop_thread {
 #[macro_export]
 #[cfg(not(feature = "enable"))]
 macro_rules! create_profiler {
-    ($timer_kind:ident) => {};
+    () => {};
 }
 
 #[macro_export]

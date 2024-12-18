@@ -3,10 +3,12 @@
 #![feature(variant_count)]
 #![feature(stmt_expr_attributes)]
 #![feature(generic_const_exprs)]
+#![feature(inline_const)]
+#![feature(let_chains)]
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io::Read;
-use std::mem::variant_count;
 use std::time::{Duration, Instant};
 
 mod macros;
@@ -14,6 +16,8 @@ pub use macros::*;
 
 mod repitition_tester;
 pub use repitition_tester::{RepititionTester, TestResults};
+
+pub use timeloop_proc_macro::*;
 
 // Check to ensure the profiler is explictly enabled or disabled
 #[cfg(not(any(feature = "enable", feature = "disable")))]
@@ -33,6 +37,17 @@ pub struct Timer {
 
     /// The number of bytes processed in this timing block
     pub bytes_processed: u64,
+}
+
+impl Timer {
+    const fn const_default() -> Self {
+        Self {
+            exclusive_time: 0,
+            inclusive_time: 0,
+            hits: 0,
+            bytes_processed: 0,
+        }
+    }
 }
 
 impl std::ops::Add for Timer {
@@ -59,22 +74,28 @@ struct TimerResult {
     pub throughput_str: String,
 }
 
+const MAX_TIMERS: usize = 128;
+
 /// The provided `Timer` struct that takes an abstract enum with the available subtimers
 /// to keep track of
 #[derive(Debug, Clone)]
-pub struct Profiler<T, const THREADS: usize>
-where
-    [(); variant_count::<T>()]:,
-    T: std::fmt::Debug,
-{
+pub struct Profiler<const THREADS: usize> {
     /// The global elapsed
     pub thread_times: [u64; THREADS],
 
     /// The status of the the thread indexed timer
     pub thread_status: [ThreadTimerStatus; THREADS],
 
+    /// Timer name mapped to its index
+    pub timer_name_to_index: BTreeMap<&'static str, u32>,
+
+    /// The index to allocate for the next timer
+    pub next_index: u32,
+
+    pub timer_names: [&'static str; MAX_TIMERS],
+
     /// Current timers available
-    pub timers: [[Timer; variant_count::<T>()]; THREADS],
+    pub timers: [[Timer; MAX_TIMERS]; THREADS],
 }
 
 /// Get the page faults from the current process
@@ -121,26 +142,49 @@ pub enum ThreadTimerStatus {
 
 const REMAINING_TIME_LABEL: &'static str = "Remainder";
 
-impl<T, const THREADS: usize> Profiler<T, THREADS>
-where
-    [(); variant_count::<T>()]:,
-    T: Debug + Copy + Clone + PartialEq + Eq,
-    T: Into<usize>,
-    T: TryFrom<usize>,
-    <T as TryFrom<usize>>::Error: Debug,
-{
+impl<const THREADS: usize> Profiler<THREADS> {
     /// Create a new timer struct
     pub const fn new() -> Self {
         Self {
             thread_times: [0; THREADS],
             thread_status: [ThreadTimerStatus::Stopped; THREADS],
+            timer_name_to_index: BTreeMap::new(),
+            next_index: 0,
+            timers: [[Timer::const_default(); MAX_TIMERS]; THREADS],
+            timer_names: [""; MAX_TIMERS],
+        }
+    }
 
-            timers: [[Timer {
-                inclusive_time: 0,
-                exclusive_time: 0,
-                hits: 0,
-                bytes_processed: 0,
-            }; variant_count::<T>()]; THREADS],
+    pub fn get_timer_index(&mut self, timer_name: &'static str) -> usize {
+        if let Some(index) = self.timer_name_to_index.get(timer_name) {
+            return *index as usize;
+        }
+
+        // Not yet seen timer. Add it to the profiler
+        let curr_index = self.next_index;
+        self.timer_name_to_index.insert(timer_name, curr_index);
+        self.next_index += 1;
+        self.timer_names[curr_index as usize] = timer_name;
+        curr_index as usize
+    }
+
+    pub fn get_timer(&mut self, thread_id: usize, timer: &'static str) -> &Timer {
+        let index = self.get_timer_index(timer);
+
+        if let Some(timers) = self.timers.get(thread_id) {
+            &timers[index]
+        } else {
+            panic!("Unknown thread id: {thread_id}");
+        }
+    }
+
+    pub fn get_timer_mut(&mut self, thread_id: usize, timer: &'static str) -> &mut Timer {
+        let index = self.get_timer_index(timer);
+
+        if let Some(timers) = self.timers.get_mut(thread_id) {
+            &mut timers[index]
+        } else {
+            panic!("Unknown thread id: {thread_id}");
         }
     }
 
@@ -181,12 +225,7 @@ where
         }
 
         // Initialize the accumulated timers across all threads
-        let mut acc = [Timer {
-            inclusive_time: 0,
-            exclusive_time: 0,
-            hits: 0,
-            bytes_processed: 0,
-        }; variant_count::<T>()];
+        let mut acc = [Timer::default(); MAX_TIMERS];
 
         // Fold all of the current timers into the first one
         let mut total_time_cycles = 0;
@@ -202,7 +241,7 @@ where
             // Add this thread's time to the total time
             total_time_cycles += thread_time;
 
-            for timer_index in 0..variant_count::<T>() {
+            for timer_index in 0..MAX_TIMERS {
                 let Timer {
                     inclusive_time,
                     exclusive_time,
@@ -224,15 +263,11 @@ where
         let mut variant_length = REMAINING_TIME_LABEL.len();
         let mut hits_col_width = 1;
 
-        // Calculate the longest subtimer variant name
-        for i in 0..variant_count::<T>() {
-            let Ok(timer) = T::try_from(i) else {
-                continue;
-            };
+        // Calculate the longest timer name
+        let max_timer_name = self.timer_names.iter().map(|x| x.len()).max().unwrap_or(0);
 
-            // Update the variant length to be the maximum length (capped at 60 chars)
-            variant_length = variant_length.max(format!("{timer:?}").len()).min(60);
-        }
+        // Update the variant length to be the maximum length (capped at 60 chars)
+        variant_length = variant_length.max(max_timer_name).min(60);
 
         let total_time_secs = total_time_cycles as f64 / os_timer_freq;
 
@@ -294,7 +329,7 @@ where
 
             hits_col_width = hits_col_width.max(format!("{hits}").len());
 
-            let name = format!("{:?}", T::try_from(i).unwrap());
+            let name = format!("{}", self.timer_names[i]);
             let name = name[..name.len().min(variant_length)].to_string();
 
             results.push(TimerResult {
