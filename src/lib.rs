@@ -1,9 +1,7 @@
 #![allow(incomplete_features)]
-#![feature(lazy_cell)]
 #![feature(variant_count)]
 #![feature(stmt_expr_attributes)]
 #![feature(generic_const_exprs)]
-#![feature(inline_const)]
 #![feature(let_chains)]
 
 use std::collections::BTreeMap;
@@ -144,6 +142,12 @@ pub enum ThreadTimerStatus {
 }
 
 const REMAINING_TIME_LABEL: &str = "Remainder";
+
+impl<const THREADS: usize> Default for Profiler<THREADS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<const THREADS: usize> Profiler<THREADS> {
     /// Create a new timer struct
