@@ -1,6 +1,7 @@
 //! Implements `RepitionTester`
 use std::time::{Duration, Instant};
 
+#[allow(dead_code)]
 enum TestingState {
     // Uninit,
     Running,
@@ -74,9 +75,9 @@ impl TestResults {
     /// Print the results of this test
     pub fn print(&self) {
         let TestResults {
-            count,
-            total_time,
-            total_page_faults,
+            count: _,
+            total_time: _,
+            total_page_faults: _,
             max,
             min,
             avg,
@@ -155,7 +156,7 @@ fn rdtsc() -> u64 {
 impl RepititionTester {
     #[must_use]
     pub fn new(duration: Duration) -> Self {
-        let pf = crate::get_page_faults();
+        let _pf = crate::get_page_faults();
 
         Self {
             state: TestingState::Running,
@@ -185,11 +186,12 @@ impl RepititionTester {
     }
 
     /// Get the results of a test that used `bytes` number of bytes
-    pub fn results_with_throughput(&mut self, bytes: u64) -> TestResults {
+    pub fn results_with_throughput(&mut self, bytes: usize) -> TestResults {
         self._results(Some(bytes))
     }
 
-    fn _results(&mut self, bytes: Option<u64>) -> TestResults {
+    #[allow(clippy::cast_precision_loss)]
+    fn _results(&mut self, bytes: Option<usize>) -> TestResults {
         let os_freq = crate::calculate_os_frequency();
 
         if self.results.count == 0 {

@@ -20,18 +20,24 @@ pub enum Allocation {
 
 pub struct TestParameters {
     pub file: &'static str,
-    pub expected_file_size: u64,
+    pub expected_file_size: usize,
     pub buffer: Option<Vec<u8>>,
     pub allocation: Allocation,
 }
 
 impl TestParameters {
+    /// # Panics
+    ///
+    /// * Reused buffer wasn't properly reset
     pub fn get_buffer(&mut self) -> Vec<u8> {
         match self.allocation {
             Allocation::New => Vec::new(),
-            Allocation::NewWithCapacity => Vec::with_capacity(self.expected_file_size as usize),
+            Allocation::NewWithCapacity => Vec::with_capacity(self.expected_file_size),
             Allocation::Reused => {
-                let mut result = self.buffer.take().expect("Reused buffer not available");
+                let mut result = self
+                    .buffer
+                    .take()
+                    .expect("Reused buffer was not set back after take()");
                 result.clear();
                 result
             }
@@ -39,10 +45,12 @@ impl TestParameters {
     }
 }
 
+#[allow(clippy::missing_panics_doc)]
 pub fn test_read(params: &mut TestParameters) -> Vec<u8> {
     std::fs::read(params.file).unwrap()
 }
 
+#[allow(clippy::missing_panics_doc)]
 pub fn test_file_read(params: &mut TestParameters) -> Vec<u8> {
     let mut file = std::fs::File::open(params.file).unwrap();
 
@@ -54,6 +62,7 @@ pub fn test_file_read(params: &mut TestParameters) -> Vec<u8> {
     result
 }
 
+#[allow(clippy::missing_panics_doc, clippy::cast_possible_truncation)]
 pub fn test_write(params: &mut TestParameters) -> Vec<u8> {
     let mut result = params.get_buffer();
 
@@ -64,19 +73,16 @@ pub fn test_write(params: &mut TestParameters) -> Vec<u8> {
     result
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn test_libc(params: &mut TestParameters) -> Vec<u8> {
     let path_cstr = std::ffi::CString::new(params.file).unwrap();
     let file_fd = unsafe { libc::open(path_cstr.as_ptr(), libc::O_RDONLY) };
 
-    if file_fd == -1 {
-        panic!("Failed to open the file");
-    }
+    assert!(file_fd != -1, "Failed to open the file");
 
     // Determine the file size
     let file_size = unsafe { libc::lseek(file_fd, 0, libc::SEEK_END) };
-    if file_size == -1 {
-        panic!("Failed to seek to the end of the file");
-    }
+    assert!(file_size != -1, "Failed to open the file");
 
     // Reset the file descriptor back to the beginning to read
     unsafe {
@@ -94,35 +100,33 @@ fn test_libc(params: &mut TestParameters) -> Vec<u8> {
             0 as libc::off_t,
         )
     };
-
-    if mmap_ptr == libc::MAP_FAILED {
-        panic!("Failed to mmap the file");
-    }
+    assert!(mmap_ptr != libc::MAP_FAILED, "Failed to map the file");
 
     // Read the content from the mmap'd memory
-    let mut result = Vec::with_capacity(params.expected_file_size as usize);
+    let mut result = Vec::with_capacity(params.expected_file_size);
+    let ptr: *mut u8 = result.as_mut_ptr();
 
     let read_size = unsafe {
         libc::read(
             file_fd,
-            result.as_mut_ptr() as *mut libc::c_void,
+            ptr.cast::<libc::c_void>(),
             file_size as libc::size_t,
         )
     };
 
-    if read_size == -1 {
-        panic!("Failed to read from the file");
-    }
+    assert!(read_size != -1, "Failed to read from the file");
 
     // Unmap the file
-    if unsafe { libc::munmap(mmap_ptr, file_size as libc::size_t) } != 0 {
-        panic!("Failed to munmap the file");
-    }
+    assert!(
+        unsafe { libc::munmap(mmap_ptr, file_size as libc::size_t) } == 0,
+        "Failed to munmap the file"
+    );
 
     // Close the file descriptor
-    if unsafe { libc::close(file_fd) } == -1 {
-        panic!("Failed to close the file");
-    }
+    assert!(
+        unsafe { libc::close(file_fd) } != -1,
+        "Failed to close the file"
+    );
 
     // Set the buffer length based on the actual read size
     unsafe {
@@ -132,19 +136,22 @@ fn test_libc(params: &mut TestParameters) -> Vec<u8> {
     result
 }
 
+type NamedTestFunction = (&'static str, fn(&mut TestParameters) -> Vec<u8>);
+
 fn main() {
-    const FILE: &'static str = "/tmp/testfile";
-    const EXPECTED_FILE_SIZE: u64 = 1024 * 1024 * 1024;
+    const FILE: &str = "/tmp/testfile";
+    const EXPECTED_FILE_SIZE: usize = 1024 * 1024 * 1024;
 
     let mut rng = rand::thread_rng();
 
     // Create the test file if it doesn't exist
+    #[allow(clippy::cast_possible_truncation)]
     if !std::path::Path::new(FILE).exists() {
         let buf: Vec<u8> = (0..EXPECTED_FILE_SIZE).map(|_| rdtsc() as u8).collect();
         std::fs::write(FILE, buf).expect("Failed to write test file");
     }
 
-    let funcs: &mut [(&'static str, fn(&mut TestParameters) -> Vec<u8>)] = &mut [
+    let funcs: &mut [NamedTestFunction] = &mut [
         ("File::open -> read_to_end", test_file_read),
         ("std::fs::read", test_read),
         ("libc", test_libc),
@@ -184,7 +191,7 @@ fn main() {
 
                     // Check for valid results
                     assert!(
-                        result.len() == EXPECTED_FILE_SIZE as usize,
+                        result.len() == EXPECTED_FILE_SIZE,
                         "Found {} != {EXPECTED_FILE_SIZE}",
                         result.len()
                     );

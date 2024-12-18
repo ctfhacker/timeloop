@@ -12,7 +12,6 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 
 mod macros;
-pub use macros::*;
 
 mod repitition_tester;
 pub use repitition_tester::{RepititionTester, TestResults};
@@ -99,6 +98,10 @@ pub struct Profiler<const THREADS: usize> {
 }
 
 /// Get the page faults from the current process
+///
+/// # Panics
+///
+/// * Cannot open /proc/self/stat
 #[must_use]
 pub fn get_page_faults() -> u64 {
     let mut proc_stat = [0u8; 0x400];
@@ -106,7 +109,8 @@ pub fn get_page_faults() -> u64 {
     let mut file = std::fs::File::open("/proc/self/stat").expect("Cannot open /proc/self/stat");
 
     // Read the file into the stack buffer
-    file.read(&mut proc_stat)
+    let _bytes_read = file
+        .read(&mut proc_stat)
         .expect("Failed to read /proc/self/stat");
 
     // Split the buffer by whitespace and skip to the first page fault entry
@@ -128,7 +132,6 @@ pub fn get_page_faults() -> u64 {
     minor_page_faults + major_page_faults
 }
 
-#[inline(always)]
 fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
@@ -140,10 +143,11 @@ pub enum ThreadTimerStatus {
     Running,
 }
 
-const REMAINING_TIME_LABEL: &'static str = "Remainder";
+const REMAINING_TIME_LABEL: &str = "Remainder";
 
 impl<const THREADS: usize> Profiler<THREADS> {
     /// Create a new timer struct
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             thread_times: [0; THREADS],
@@ -168,6 +172,11 @@ impl<const THREADS: usize> Profiler<THREADS> {
         curr_index as usize
     }
 
+    /// Get the timer for a given thread
+    ///
+    /// # Panics
+    ///
+    /// If the given `thread_id` is too large
     pub fn get_timer(&mut self, thread_id: usize, timer: &'static str) -> &Timer {
         let index = self.get_timer_index(timer);
 
@@ -178,6 +187,11 @@ impl<const THREADS: usize> Profiler<THREADS> {
         }
     }
 
+    /// Get the &mut timer for a given thread
+    ///
+    /// # Panics
+    ///
+    /// If the given `thread_id` is too large
     pub fn get_timer_mut(&mut self, thread_id: usize, timer: &'static str) -> &mut Timer {
         let index = self.get_timer_index(timer);
 
@@ -189,7 +203,6 @@ impl<const THREADS: usize> Profiler<THREADS> {
     }
 
     /// Start the timer for the given thread
-    #[inline(always)]
     pub fn start(&mut self, thread_id: usize) {
         if self.thread_status[thread_id] != ThreadTimerStatus::Stopped {
             println!("Attempted to start an already started timer on thread {thread_id}");
@@ -200,7 +213,6 @@ impl<const THREADS: usize> Profiler<THREADS> {
     }
 
     /// Stop the timer for the given thread
-    #[inline(always)]
     pub fn stop(&mut self, thread_id: usize) {
         if self.thread_status[thread_id] != ThreadTimerStatus::Running {
             println!("Attempted to stop an already stopped timer {thread_id}");
@@ -211,6 +223,7 @@ impl<const THREADS: usize> Profiler<THREADS> {
     }
 
     /// Print a basic percentage-based status of the timers state
+    #[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
     pub fn print(&mut self) {
         // Immediately stop the profiler's timer at the beginning of this function
         let stop_time = rdtsc();
@@ -241,7 +254,7 @@ impl<const THREADS: usize> Profiler<THREADS> {
             // Add this thread's time to the total time
             total_time_cycles += thread_time;
 
-            for timer_index in 0..MAX_TIMERS {
+            for (timer_index, timer) in acc.iter_mut().enumerate() {
                 let Timer {
                     inclusive_time,
                     exclusive_time,
@@ -250,10 +263,10 @@ impl<const THREADS: usize> Profiler<THREADS> {
                 } = self.timers[thread_id][timer_index];
 
                 // Add the current timer to the accumulated timer
-                acc[timer_index].inclusive_time += inclusive_time;
-                acc[timer_index].exclusive_time += exclusive_time;
-                acc[timer_index].hits += hits;
-                acc[timer_index].bytes_processed += bytes_processed;
+                timer.inclusive_time += inclusive_time;
+                timer.exclusive_time += exclusive_time;
+                timer.hits += hits;
+                timer.bytes_processed += bytes_processed;
             }
         }
 
@@ -276,11 +289,11 @@ impl<const THREADS: usize> Profiler<THREADS> {
             std::time::Duration::from_secs_f64(total_time_secs)
         );
 
-        let mut other = total_time_cycles as isize;
+        let mut other = total_time_cycles;
 
         // Calculate the maximum width of the hits column
         let mut hit_width = "HITS".len();
-        for Timer { hits, .. } in acc.iter() {
+        for Timer { hits, .. } in &acc {
             hit_width = hit_width.max(format!("{hits}").len());
         }
 
@@ -301,7 +314,7 @@ impl<const THREADS: usize> Profiler<THREADS> {
                 continue;
             }
 
-            other -= exclusive_time as isize;
+            other = other.wrapping_sub(exclusive_time);
             let percent = exclusive_time as f64 / total_time_cycles as f64 * 100.;
 
             // Include the total time if it was included
@@ -329,15 +342,15 @@ impl<const THREADS: usize> Profiler<THREADS> {
 
             hits_col_width = hits_col_width.max(format!("{hits}").len());
 
-            let name = format!("{}", self.timer_names[i]);
+            let name = self.timer_names[i];
             let name = name[..name.len().min(variant_length)].to_string();
 
             results.push(TimerResult {
                 name,
-                hits,
                 exclusive_time,
-                percent,
                 inclusive_time_str,
+                hits,
+                percent,
                 throughput_str,
             });
         }
@@ -363,9 +376,7 @@ impl<const THREADS: usize> Profiler<THREADS> {
         {
             // Print the stats for this timer
             eprintln!(
-                "{name:<width$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
-                width = variant_length,
-                hit_width = hit_width
+                "{name:<variant_length$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
             );
         }
 
@@ -389,6 +400,7 @@ impl<const THREADS: usize> Profiler<THREADS> {
 }
 
 /// Calculate the OS frequency by timing a small timeout using `rdtsc`
+#[allow(clippy::cast_precision_loss)]
 fn calculate_os_frequency() -> f64 {
     let timeout = Duration::from_millis(100);
     let start = Instant::now();

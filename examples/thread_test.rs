@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 const END: usize = 10;
-const SLEEP_INTERVAL: Duration = Duration::from_millis(10);
+const SLEEP_INTERVAL: Duration = Duration::from_millis(2);
 
 timeloop::create_profiler!();
 
@@ -54,13 +54,11 @@ fn thread_func(i: usize) {
 
     timeloop::scoped_timer!("Total");
 
-    /*
     for _ in 0..i {
-        timeloop::time_work!(BasicTimers::CoreSpecific, {
+        timeloop::time_work!("Core Specific", {
             std::thread::sleep(SLEEP_INTERVAL);
         });
     }
-    */
 
     top();
     top();
@@ -73,7 +71,7 @@ fn main() {
 
     let start = std::time::Instant::now();
 
-    for k in 0..50 {
+    for k in 0..4 {
         let mut threads = Vec::with_capacity(8);
 
         for i in 1..=4 {
@@ -88,7 +86,7 @@ fn main() {
 
         timeloop::time_work!("Join Threads", {
             for thread in threads {
-                thread.join();
+                let _ = thread.join();
             }
         });
     }

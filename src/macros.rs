@@ -1,5 +1,5 @@
 /// Macro for creating various functions needed for the profiler
-/// over the enum of profile points, such as Into<usize> and TryFrom<usize>
+/// over the enum of profile points, such as Into<usize> and `TryFrom`<usize>
 #[macro_export]
 macro_rules! impl_enum {
     (   // Base case of an enum that we want only one item of
@@ -51,6 +51,7 @@ macro_rules! impl_enum {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! create_profiler {
     () => {
         pub const NUM_THREADS: usize = 4096;
@@ -60,8 +61,7 @@ macro_rules! create_profiler {
             timeloop::Profiler::<NUM_THREADS>::new();
 
         // The current node being profiled, used to save who called which timer
-        static mut PROFILER_PARENT: [Option<&'static str>; crate::NUM_THREADS] =
-            [None; crate::NUM_THREADS];
+        static mut PROFILER_PARENT: [Option<&'static str>; NUM_THREADS] = [None; NUM_THREADS];
 
         pub struct _ScopedTimer {
             /// This name of this current timer
@@ -85,7 +85,7 @@ macro_rules! create_profiler {
             let thread_id = std::thread::current().id().as_u64().get() as usize;
 
             assert!(
-                thread_id < crate::NUM_THREADS,
+                thread_id < NUM_THREADS,
                 "Too many threads. Increase timeloop::NUM_THREADS"
             );
 
@@ -200,6 +200,7 @@ macro_rules! time_work_with_bandwidth {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! raw_timer {
     ($timer:expr) => {{
         crate::_ScopedTimer::new($timer)
@@ -208,6 +209,7 @@ macro_rules! raw_timer {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! start_thread {
     () => {
         unsafe {
@@ -221,6 +223,7 @@ macro_rules! start_thread {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! start_profiler {
     () => {
         unsafe {
@@ -234,6 +237,7 @@ macro_rules! start_profiler {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! stop_thread {
     () => {
         unsafe {
@@ -247,6 +251,7 @@ macro_rules! stop_thread {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! print {
     () => {
         unsafe {
@@ -257,6 +262,7 @@ macro_rules! print {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! print_with_iterations {
     ($iters:expr) => {
         unsafe {
@@ -267,6 +273,7 @@ macro_rules! print_with_iterations {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! scoped_timer {
     ($timer:expr) => {
         let _timer = crate::_ScopedTimer::new($timer);
@@ -275,6 +282,7 @@ macro_rules! scoped_timer {
 
 #[macro_export]
 #[cfg(feature = "enable")]
+#[allow(clippy::crate_in_macro_def)]
 macro_rules! scoped_bandwidth_timer {
     ($timer:expr, $bytes:expr) => {
         let _timer = crate::_ScopedTimer::new_with_bandwidth($timer, $bytes);
