@@ -1,6 +1,8 @@
 #![feature(lazy_cell)]
 #![feature(thread_id_value)]
 
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 const END: usize = 10;
@@ -49,34 +51,37 @@ fn top() {
     first(&mut counter);
 }
 
-fn thread_func(i: usize) {
+fn thread_func(i: usize, counter: Arc<AtomicU32>) {
     timeloop::start_thread!();
 
-    timeloop::scoped_timer!("Total");
+    timeloop::time_work!("Increment counter", {
+        for _ in 0..i {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
+    });
 
-    for _ in 0..i {
-        timeloop::time_work!("Core Specific", {
-            std::thread::sleep(SLEEP_INTERVAL);
-        });
-    }
-
-    top();
     top();
 
     timeloop::stop_thread!();
 }
 
 fn main() {
+    let start = std::time::Instant::now();
+    let counter = Arc::new(AtomicU32::new(0));
+    let num_threads = 16;
+    let iters = 8;
+
     timeloop::start_profiler!();
 
-    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        let mut threads =
+            timeloop::time_work!("Allocate thread vec", { Vec::with_capacity(num_threads) });
 
-    for k in 0..4 {
-        let mut threads = Vec::with_capacity(8);
+        for _ in 0..num_threads {
+            let counter = timeloop::time_work!("Clone counter", { counter.clone() });
 
-        for i in 1..=4 {
             let t = timeloop::time_work!("Spawn Thread", {
-                std::thread::spawn(move || thread_func(k * 50 + i))
+                std::thread::spawn(move || thread_func(1000, counter))
             });
 
             timeloop::time_work!("Push Thread", {
@@ -91,8 +96,9 @@ fn main() {
         });
     }
 
-    println!("Time: {:?}", start.elapsed());
-
     // Print the timer state
     timeloop::print!();
+
+    println!("Time: {:?}", start.elapsed());
+    println!("Counter: {:?}", counter.load(Ordering::SeqCst));
 }
