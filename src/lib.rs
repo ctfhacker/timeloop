@@ -71,7 +71,7 @@ struct TimerResult {
     pub throughput_str: String,
 }
 
-const MAX_TIMERS: usize = 128;
+const MAX_TIMERS: usize = 256;
 
 /// The provided `Timer` struct that takes an abstract enum with the available subtimers
 /// to keep track of
@@ -172,7 +172,10 @@ impl<const THREADS: usize> Profiler<THREADS> {
         let curr_index = self.next_index;
         self.timer_name_to_index.insert(timer_name, curr_index);
         self.next_index += 1;
-        self.timer_names[curr_index as usize] = timer_name;
+        *self
+            .timer_names
+            .get_mut(curr_index as usize)
+            .expect("DAFAQ") = timer_name;
         curr_index as usize
     }
 

@@ -50,19 +50,21 @@ macro_rules! impl_enum {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! create_profiler {
     () => {
         pub const NUM_THREADS: usize = 4096;
 
         // Create the static profiler
-        static mut TIMELOOP_PROFILER: timeloop::Profiler<NUM_THREADS> =
+        pub static mut TIMELOOP_PROFILER: timeloop::Profiler<NUM_THREADS> =
             timeloop::Profiler::<NUM_THREADS>::new();
 
         // The current node being profiled, used to save who called which timer
-        static mut PROFILER_PARENT: [Option<&'static str>; NUM_THREADS] = [None; NUM_THREADS];
+        #[cfg(not(test))]
+        pub static mut PROFILER_PARENT: [Option<&'static str>; NUM_THREADS] = [None; NUM_THREADS];
 
+        #[cfg(not(test))]
         pub struct _ScopedTimer {
             /// This name of this current timer
             timer: &'static str,
@@ -97,11 +99,11 @@ macro_rules! create_profiler {
         }
 
         impl _ScopedTimer {
-            fn new(timer: &'static str) -> Self {
+            pub fn new(timer: &'static str) -> Self {
                 _ScopedTimer::_new(timer, 0)
             }
 
-            fn new_with_bandwidth(timer: &'static str, bytes_processed: u64) -> Self {
+            pub fn new_with_bandwidth(timer: &'static str, bytes_processed: u64) -> Self {
                 _ScopedTimer::_new(timer, bytes_processed)
             }
 
@@ -173,10 +175,11 @@ macro_rules! create_profiler {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 macro_rules! time_work {
     ($timer:expr, $work:expr) => {{
         {
+            #[cfg(not(test))]
             timeloop::scoped_timer!($timer);
 
             let result = $work;
@@ -186,7 +189,7 @@ macro_rules! time_work {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 macro_rules! time_work_with_bandwidth {
     ($timer:expr, $bytes:expr, $work:expr) => {{
         {
@@ -199,7 +202,7 @@ macro_rules! time_work_with_bandwidth {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! raw_timer {
     ($timer:expr) => {{
@@ -208,7 +211,7 @@ macro_rules! raw_timer {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! start_thread {
     () => {
@@ -222,7 +225,7 @@ macro_rules! start_thread {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! start_profiler {
     () => {
@@ -236,7 +239,7 @@ macro_rules! start_profiler {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! stop_thread {
     () => {
@@ -250,7 +253,7 @@ macro_rules! stop_thread {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! print {
     () => {
@@ -261,7 +264,7 @@ macro_rules! print {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! print_with_iterations {
     ($iters:expr) => {
@@ -272,7 +275,7 @@ macro_rules! print_with_iterations {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! scoped_timer {
     ($timer:expr) => {
@@ -281,7 +284,7 @@ macro_rules! scoped_timer {
 }
 
 #[macro_export]
-#[cfg(feature = "enable")]
+#[cfg(all(feature = "enable", not(test)))]
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! scoped_bandwidth_timer {
     ($timer:expr, $bytes:expr) => {

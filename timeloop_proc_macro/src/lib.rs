@@ -10,6 +10,7 @@ pub fn profile(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let identifier = format!("Fn__{func_name}");
 
     let scoped_timer = syn::parse_quote! {
+        #[cfg(not(test))]
         timeloop::scoped_timer!(#identifier);
     };
 
@@ -50,6 +51,7 @@ pub fn profile_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
             let identifier = format!("{type_name}::{func_name}");
 
             let scoped_timer = syn::parse_quote! {
+                #[cfg(not(test))]
                 timeloop::scoped_timer!(#identifier);
             };
 
