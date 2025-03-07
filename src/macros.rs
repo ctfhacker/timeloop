@@ -141,33 +141,38 @@ macro_rules! create_profiler {
                     // Reset the current parent node
                     PROFILER_PARENT[thread_id] = self.parent;
 
-                    // Calculate the elapsed time for this timer
-                    let stop_time = unsafe { std::arch::x86_64::_rdtsc() };
-                    let elapsed = stop_time - self.start_time;
+                    // Only use time from this timer if we are running
+                    if crate::TIMELOOP_PROFILER.thread_status[thread_id]
+                        == timeloop::ThreadTimerStatus::Running
+                    {
+                        // Calculate the elapsed time for this timer
+                        let stop_time = unsafe { std::arch::x86_64::_rdtsc() };
+                        let elapsed = stop_time - self.start_time;
 
-                    // If there is a parent timer, remove this elapsed time from the parent
-                    if let Some(parent) = self.parent {
-                        let mut parent_timer =
-                            &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, parent);
+                        // If there is a parent timer, remove this elapsed time from the parent
+                        if let Some(parent) = self.parent {
+                            let mut parent_timer =
+                                &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, parent);
 
-                        parent_timer.exclusive_time =
-                            parent_timer.exclusive_time.wrapping_sub(elapsed);
+                            parent_timer.exclusive_time =
+                                parent_timer.exclusive_time.wrapping_sub(elapsed);
+                        }
+
+                        let mut curr_timer =
+                            &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, self.timer);
+
+                        // Update this timer's elapsed time
+                        curr_timer.exclusive_time = curr_timer.exclusive_time.wrapping_add(elapsed);
+
+                        // Specifically overwritting this timer to always
+                        curr_timer.inclusive_time = self.old_inclusive_time + elapsed;
+
+                        // Add this the number of bytes processed by this timer
+                        curr_timer.bytes_processed += self.bytes_processed;
+
+                        // Increment the hit count
+                        curr_timer.hits += 1;
                     }
-
-                    let mut curr_timer =
-                        &mut crate::TIMELOOP_PROFILER.get_timer_mut(thread_id, self.timer);
-
-                    // Update this timer's elapsed time
-                    curr_timer.exclusive_time = curr_timer.exclusive_time.wrapping_add(elapsed);
-
-                    // Specifically overwritting this timer to always
-                    curr_timer.inclusive_time = self.old_inclusive_time + elapsed;
-
-                    // Add this the number of bytes processed by this timer
-                    curr_timer.bytes_processed += self.bytes_processed;
-
-                    // Increment the hit count
-                    curr_timer.hits += 1;
                 }
             }
         }
