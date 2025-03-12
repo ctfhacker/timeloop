@@ -12,16 +12,13 @@ fn rdtsc() -> u64 {
 }
 
 #[derive(Debug)]
-pub enum Allocation {
-    New,
-    NewWithCapacity,
-    Reused,
+pub enum Collection {
+    Linear,
+    BTreeMap,
+    HashMap,
 }
 
 pub struct TestParameters {
-    pub file: &'static str,
-    pub expected_file_size: usize,
-    pub buffer: Option<Vec<u8>>,
     pub allocation: Allocation,
 }
 
@@ -72,70 +69,6 @@ pub fn test_write(params: &mut TestParameters) -> Vec<u8> {
 
     result
 }
-
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-fn test_libc(params: &mut TestParameters) -> Vec<u8> {
-    let path_cstr = std::ffi::CString::new(params.file).unwrap();
-    let file_fd = unsafe { libc::open(path_cstr.as_ptr(), libc::O_RDONLY) };
-
-    assert!(file_fd != -1, "Failed to open the file");
-
-    // Determine the file size
-    let file_size = unsafe { libc::lseek(file_fd, 0, libc::SEEK_END) };
-    assert!(file_size != -1, "Failed to open the file");
-
-    // Reset the file descriptor back to the beginning to read
-    unsafe {
-        libc::lseek(file_fd, 0, libc::SEEK_SET);
-    }
-
-    // Map the file into memory
-    let mmap_ptr = unsafe {
-        libc::mmap(
-            std::ptr::null_mut(),
-            file_size as libc::size_t,
-            libc::PROT_READ,
-            libc::MAP_PRIVATE,
-            file_fd,
-            0 as libc::off_t,
-        )
-    };
-    assert!(mmap_ptr != libc::MAP_FAILED, "Failed to map the file");
-
-    // Read the content from the mmap'd memory
-    let mut result = Vec::with_capacity(params.expected_file_size);
-    let ptr: *mut u8 = result.as_mut_ptr();
-
-    let read_size = unsafe {
-        libc::read(
-            file_fd,
-            ptr.cast::<libc::c_void>(),
-            file_size as libc::size_t,
-        )
-    };
-
-    assert!(read_size != -1, "Failed to read from the file");
-
-    // Unmap the file
-    assert!(
-        unsafe { libc::munmap(mmap_ptr, file_size as libc::size_t) } == 0,
-        "Failed to munmap the file"
-    );
-
-    // Close the file descriptor
-    assert!(
-        unsafe { libc::close(file_fd) } != -1,
-        "Failed to close the file"
-    );
-
-    // Set the buffer length based on the actual read size
-    unsafe {
-        result.set_len(read_size as usize);
-    }
-
-    result
-}
-
 type NamedTestFunction = (&'static str, fn(&mut TestParameters) -> Vec<u8>);
 
 fn main() {
@@ -152,15 +85,11 @@ fn main() {
     }
 
     let funcs: &mut [NamedTestFunction] = &mut [
-        ("File::open -> read_to_end", test_file_read),
-        ("std::fs::read", test_read),
-        ("libc", test_libc),
-        ("write", test_write),
+        ("Linear sweep", test_linear_sweep),
+        ("BTreeMap", test_btreemap),
     ];
 
     let mut params = TestParameters {
-        file: FILE,
-        expected_file_size: EXPECTED_FILE_SIZE,
         buffer: None,
         allocation: Allocation::New,
     };

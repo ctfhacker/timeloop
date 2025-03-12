@@ -163,6 +163,10 @@ impl<const THREADS: usize> Profiler<THREADS> {
         }
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn get_timer_index(&mut self, timer_name: &'static str) -> usize {
         if let Some(index) = self.timer_name_to_index.get(timer_name) {
             return *index as usize;

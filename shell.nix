@@ -1,6 +1,6 @@
 let
 
-  orig_pkgs = import (fetchTarball("channel:nixpkgs-23.11-darwin")) {};
+  orig_pkgs = import (fetchTarball("channel:nixpkgs-24.11-darwin")) {};
 
   rust-overlay = import(orig_pkgs.fetchFromGitHub {
     owner = "oxalica";
