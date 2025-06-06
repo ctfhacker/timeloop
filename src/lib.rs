@@ -460,3 +460,63 @@ fn calculate_os_frequency() -> f64 {
 
     (clock_end - clock_start) as f64 / timeout.as_secs_f64()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    // Helper function to simulate a tiny sleep (busy-wait, since sleep may not be accurate for ns)
+    fn sleep_approx_nanos(ns: u64) {
+        let start = Instant::now();
+        while start.elapsed().as_nanos() < ns as u128 {}
+    }
+
+    #[test]
+    fn test_short_interval_timer_removal() {
+        let mut profiler = Profiler::<1>::default();
+
+        // 10ns function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "10ns_fn");
+            let start = rdtsc();
+            sleep_approx_nanos(10);
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // 10ms function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "10ms_fn");
+            let start = rdtsc();
+            thread::sleep(Duration::from_millis(10));
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // 100ms function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "100ms_fn");
+            let start = rdtsc();
+            thread::sleep(Duration::from_millis(100));
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // After 10 cycles, the 10ns_fn should be ignored
+        let idx_10ns = profiler.timer_name_to_index["10ns_fn"] as usize;
+        let idx_10ms = profiler.timer_name_to_index["10ms_fn"] as usize;
+        let idx_100ms = profiler.timer_name_to_index["100ms_fn"] as usize;
+
+        assert!(profiler.ignored_timer[idx_10ns], "10ns_fn should be ignored");
+        assert!(!profiler.ignored_timer[idx_10ms], "10ms_fn should NOT be ignored");
+        assert!(!profiler.ignored_timer[idx_100ms], "100ms_fn should NOT be ignored");
+
+        // Optionally, print to visually inspect
+        profiler.print();
+    }
+}
