@@ -93,6 +93,13 @@ pub struct Profiler<const THREADS: usize> {
 
     /// Current timers available
     pub timers: [[Timer; MAX_TIMERS]; THREADS],
+
+    /// For each timer, tracks the number of consecutive times it was hit with less than 500 cycles
+    pub short_timer_streak: [u32; MAX_TIMERS],
+    /// For each timer, tracks the number of times it was hit with less than 500 cycles (for streak logic)
+    pub short_timer_hits: [u32; MAX_TIMERS],
+    /// Mark timers as ignored (removed from reporting)
+    pub ignored_timer: [bool; MAX_TIMERS],
 }
 
 /// Get the page faults from the current process
@@ -160,6 +167,9 @@ impl<const THREADS: usize> Profiler<THREADS> {
             next_index: 0,
             timers: [[Timer::const_default(); MAX_TIMERS]; THREADS],
             timer_names: [""; MAX_TIMERS],
+            short_timer_streak: [0; MAX_TIMERS],
+            short_timer_hits: [0; MAX_TIMERS],
+            ignored_timer: [false; MAX_TIMERS],
         }
     }
 
@@ -202,11 +212,40 @@ impl<const THREADS: usize> Profiler<THREADS> {
     pub fn get_timer_mut(&mut self, thread_id: usize, timer: &'static str) -> &mut Timer {
         let index = self.get_timer_index(timer);
 
-        if let Some(timers) = self.timers.get_mut(thread_id) {
+        // If this timer is already ignored, just return the timer (but don't update streaks)
+        if self.ignored_timer[index] {
+            if let Some(timers) = self.timers.get_mut(thread_id) {
+                return &mut timers[index];
+            } else {
+                panic!("Unknown thread id: {thread_id}");
+            }
+        }
+
+        // Only update streaks if not ignored
+        // We'll check the last exclusive_time delta and update the streak logic
+        // This logic assumes get_timer_mut is called after a timer is updated (e.g., after a block)
+        let timer_ref = if let Some(timers) = self.timers.get_mut(thread_id) {
             &mut timers[index]
         } else {
             panic!("Unknown thread id: {thread_id}");
+        };
+
+        // Only check if timer was hit
+        if timer_ref.exclusive_time > 0 && timer_ref.hits > 0 {
+            // Compute the average cycles per hit for this timer
+            let avg_cycles = timer_ref.exclusive_time / timer_ref.hits;
+            if avg_cycles < 500 {
+                self.short_timer_streak[index] += 1;
+                self.short_timer_hits[index] += 1;
+                if self.short_timer_streak[index] >= 10 && self.short_timer_hits[index] >= 10 {
+                    self.ignored_timer[index] = true;
+                }
+            } else {
+                self.short_timer_streak[index] = 0;
+            }
         }
+
+        timer_ref
     }
 
     /// Start the timer for the given thread
@@ -308,6 +347,10 @@ impl<const THREADS: usize> Profiler<THREADS> {
         let mut results = Vec::new();
 
         for (i, timer) in acc.iter().enumerate() {
+            // Ignore timers that are marked as ignored
+            if self.ignored_timer[i] {
+                continue;
+            }
             let Timer {
                 inclusive_time,
                 exclusive_time,
