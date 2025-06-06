@@ -239,6 +239,8 @@ impl<const THREADS: usize> Profiler<THREADS> {
                 self.short_timer_hits[index] += 1;
                 if self.short_timer_streak[index] >= 10 && self.short_timer_hits[index] >= 10 {
                     self.ignored_timer[index] = true;
+                    let name = self.timer_names[index];
+                    eprintln!("[timeloop] Ignoring timer '{name}' (index {index}) due to short interval (avg {avg_cycles} cycles/hit for 10+ hits)");
                 }
             } else {
                 self.short_timer_streak[index] = 0;
