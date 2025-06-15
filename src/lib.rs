@@ -16,7 +16,7 @@ pub use repitition_tester::{RepititionTester, TestResults};
 
 pub use timeloop_proc_macro::*;
 
-const MINIMAL_PERCENT_THRESHOLD: f64 = 0.8;
+const MINIMAL_PERCENT_THRESHOLD: f64 = 0.5;
 
 // Check to ensure the profiler is explictly enabled or disabled
 #[cfg(not(any(feature = "enable", feature = "disable")))]
@@ -330,11 +330,6 @@ impl<const THREADS: usize> Profiler<THREADS> {
             other = other.wrapping_sub(exclusive_time);
             let percent = exclusive_time as f64 / total_time_cycles as f64 * 100.;
 
-            // Ignore this result if it doesn't reach the minimal threshold
-            if percent <= MINIMAL_PERCENT_THRESHOLD {
-                continue;
-            }
-
             // Include the total time if it was included
             let mut inclusive_time_str = String::new();
 
@@ -392,6 +387,11 @@ impl<const THREADS: usize> Profiler<THREADS> {
             throughput_str,
         } in results.iter().rev()
         {
+            // Ignore this result if it doesn't reach the minimal threshold
+            if *percent <= MINIMAL_PERCENT_THRESHOLD {
+                continue;
+            }
+
             // Print the stats for this timer
             eprintln!(
                 "{name:<variant_length$} | {hits:<hit_width$} | {exclusive_time:14.2?} cycles {percent:6.2}% | {inclusive_time_str} {throughput_str}",
