@@ -398,6 +398,8 @@ impl<const THREADS: usize> Profiler<THREADS> {
             );
         }
 
+        let other = (other as i64).abs() as u64;
+
         // Print the remaining
         eprintln!(
             "{:<width$} | {:<hit_width$} | {other:14.2?} cycles {:6.2}%",
