@@ -95,6 +95,13 @@ pub struct Profiler<const THREADS: usize> {
 
     /// Current timers available
     pub timers: [[Timer; MAX_TIMERS]; THREADS],
+
+    /// For each timer, tracks the number of consecutive times it was hit with less than 500 cycles
+    pub short_timer_streak: [u32; MAX_TIMERS],
+    /// For each timer, tracks the number of times it was hit with less than 500 cycles (for streak logic)
+    pub short_timer_hits: [u32; MAX_TIMERS],
+    /// Mark timers as ignored (removed from reporting)
+    pub ignored_timer: [bool; MAX_TIMERS],
 }
 
 /// Get the page faults from the current process
@@ -162,6 +169,9 @@ impl<const THREADS: usize> Profiler<THREADS> {
             next_index: 0,
             timers: [[Timer::const_default(); MAX_TIMERS]; THREADS],
             timer_names: [""; MAX_TIMERS],
+            short_timer_streak: [0; MAX_TIMERS],
+            short_timer_hits: [0; MAX_TIMERS],
+            ignored_timer: [false; MAX_TIMERS],
         }
     }
 
@@ -208,11 +218,42 @@ impl<const THREADS: usize> Profiler<THREADS> {
     pub fn get_timer_mut(&mut self, thread_id: usize, timer: &'static str) -> &mut Timer {
         let index = self.get_timer_index(timer);
 
-        if let Some(timers) = self.timers.get_mut(thread_id) {
+        // If this timer is already ignored, just return the timer (but don't update streaks)
+        if self.ignored_timer[index] {
+            if let Some(timers) = self.timers.get_mut(thread_id) {
+                return &mut timers[index];
+            } else {
+                panic!("Unknown thread id: {thread_id}");
+            }
+        }
+
+        // Only update streaks if not ignored
+        // We'll check the last exclusive_time delta and update the streak logic
+        // This logic assumes get_timer_mut is called after a timer is updated (e.g., after a block)
+        let timer_ref = if let Some(timers) = self.timers.get_mut(thread_id) {
             &mut timers[index]
         } else {
             panic!("Unknown thread id: {thread_id}");
+        };
+
+        // Only check if timer was hit
+        if timer_ref.exclusive_time > 0 && timer_ref.hits > 0 {
+            // Compute the average cycles per hit for this timer
+            let avg_cycles = timer_ref.exclusive_time / timer_ref.hits;
+            if avg_cycles < 500 {
+                self.short_timer_streak[index] += 1;
+                self.short_timer_hits[index] += 1;
+                if self.short_timer_streak[index] >= 10 && self.short_timer_hits[index] >= 10 {
+                    self.ignored_timer[index] = true;
+                    let name = self.timer_names[index];
+                    eprintln!("[timeloop] Ignoring timer '{name}' (index {index}) due to short interval (avg {avg_cycles} cycles/hit for 10+ hits)");
+                }
+            } else {
+                self.short_timer_streak[index] = 0;
+            }
         }
+
+        timer_ref
     }
 
     /// Start the timer for the given thread
@@ -314,6 +355,10 @@ impl<const THREADS: usize> Profiler<THREADS> {
         let mut results = Vec::new();
 
         for (i, timer) in acc.iter().enumerate() {
+            // Ignore timers that are marked as ignored
+            if self.ignored_timer[i] {
+                continue;
+            }
             let Timer {
                 inclusive_time,
                 exclusive_time,
@@ -429,4 +474,64 @@ fn calculate_os_frequency() -> f64 {
     let clock_end = rdtsc();
 
     (clock_end - clock_start) as f64 / timeout.as_secs_f64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    // Helper function to simulate a tiny sleep (busy-wait, since sleep may not be accurate for ns)
+    fn sleep_approx_nanos(ns: u64) {
+        let start = Instant::now();
+        while start.elapsed().as_nanos() < ns as u128 {}
+    }
+
+    #[test]
+    fn test_short_interval_timer_removal() {
+        let mut profiler = Profiler::<1>::default();
+
+        // 10ns function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "10ns_fn");
+            let start = rdtsc();
+            sleep_approx_nanos(10);
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // 10ms function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "10ms_fn");
+            let start = rdtsc();
+            thread::sleep(Duration::from_millis(10));
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // 100ms function, called 10 times
+        for _ in 0..10 {
+            let timer = profiler.get_timer_mut(0, "100ms_fn");
+            let start = rdtsc();
+            thread::sleep(Duration::from_millis(100));
+            let end = rdtsc();
+            timer.exclusive_time += end - start;
+            timer.hits += 1;
+        }
+
+        // After 10 cycles, the 10ns_fn should be ignored
+        let idx_10ns = profiler.timer_name_to_index["10ns_fn"] as usize;
+        let idx_10ms = profiler.timer_name_to_index["10ms_fn"] as usize;
+        let idx_100ms = profiler.timer_name_to_index["100ms_fn"] as usize;
+
+        assert!(profiler.ignored_timer[idx_10ns], "10ns_fn should be ignored");
+        assert!(!profiler.ignored_timer[idx_10ms], "10ms_fn should NOT be ignored");
+        assert!(!profiler.ignored_timer[idx_100ms], "100ms_fn should NOT be ignored");
+
+        // Optionally, print to visually inspect
+        profiler.print();
+    }
 }
