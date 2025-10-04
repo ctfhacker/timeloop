@@ -1,5 +1,6 @@
 //! Implements `RepitionTester`
 use std::time::{Duration, Instant};
+use crate::rdtsc;
 
 #[allow(dead_code)]
 enum TestingState {
@@ -147,10 +148,6 @@ pub struct RepititionTester {
 
     /// The results of this current test
     results: TestResults,
-}
-
-fn rdtsc() -> u64 {
-    unsafe { std::arch::x86_64::_rdtsc() }
 }
 
 impl RepititionTester {

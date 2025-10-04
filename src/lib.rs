@@ -133,7 +133,15 @@ pub fn get_page_faults() -> u64 {
 }
 
 fn rdtsc() -> u64 {
+    #[cfg(target_arch = "x86_64")]
     unsafe { core::arch::x86_64::_rdtsc() }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let cntvct: u64;
+        unsafe { core::arch::asm!("mrs {}, cntvct_el0", out(reg) cntvct); }
+        cntvct
+    }
 }
 
 /// The current thread timer status
